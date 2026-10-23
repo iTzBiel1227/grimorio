@@ -13,6 +13,41 @@ npm.cmd start
 
 Acesse http://localhost:3000. No PowerShell, `npm.cmd` também funciona quando a política local bloqueia `npm.ps1`. O banco persistente é `grimorio.sqlite`, na raiz do projeto. Faça backup do banco com o servidor parado, ou use uma ferramenta compatível com SQLite em modo WAL.
 
+## Publicar a interface no Netlify
+
+Este repositório usa **Express com páginas HTML em `public/`**, SQLite e Socket.IO. Não usa React, Vite ou React Router; não existe `vite.config`. As rotas são arquivos como `/amigos.html`, `/campanha.html` e `/livros.html`, servidos localmente por `express.static`. O servidor também possui um retorno para a página inicial em caminhos desconhecidos, mas isso não transforma a interface em uma SPA.
+
+Antes desta configuração, não havia comando `build` nem pasta `dist`. Publicar a raiz do repositório, onde não há `index.html`, ou apontar para uma `dist` inexistente causa o erro de página não encontrada. Sem a URL e os logs do deploy, a configuração efetivamente usada no Netlify precisa ser conferida no painel.
+
+Para gerar os arquivos da interface:
+
+```powershell
+npm.cmd run build
+```
+
+O build recria `dist/` a partir de `public/`, preservando as páginas, os scripts, os estilos e a arte do livro. Não inclui `server.js`, o banco, credenciais ou `node_modules`. O arquivo inicial fica diretamente em `dist/index.html`. `dist` é gerada automaticamente e permanece fora do Git.
+
+O `netlify.toml` na raiz registra estas configurações:
+
+| Configuração | Valor |
+| --- | --- |
+| Repositório / branch | `iTzBiel1227/grimorio` / `main` |
+| Base directory | Raiz do repositório (`.`) |
+| Build command | `npm run build` |
+| Publish directory | `dist` |
+| Node.js | `22` |
+| Pretty URLs | Desativado, preservando os caminhos `.html` e o retorno após login |
+
+No Netlify, confira que o projeto está conectado a esse repositório e branch. Após o push, aguarde o deploy automático ou use **Deploys → Trigger deploy → Deploy site**. No deploy concluído, abra o **Deploy File Explorer** e confirme que `index.html`, `amigos.html`, `campanha.html`, `ficha.html`, `livros.html` e `assets/` estão na raiz publicada. Teste também abrir e atualizar `/livros.html` diretamente. Em publicação manual por upload, envie a pasta `dist` gerada, não a raiz do projeto.
+
+Não é necessário criar `public/_redirects` com `/* /index.html 200`: essa regra atende SPAs com roteador no navegador. Aqui, cada rota já possui seu HTML; a regra também esconderia erros de `/api/*` e `/socket.io/*`, devolvendo a página inicial onde o cliente espera JSON ou JavaScript. Consulte o [guia oficial de erro 404](https://docs.netlify.com/resources/troubleshooting/page-not-found-error-guide/) e a [configuração por arquivo](https://docs.netlify.com/build/configure-builds/file-based-configuration/).
+
+### Backend necessário para as funcionalidades
+
+**Esse deploy no Netlify publica a interface estática; não inicia `server.js`.** Login, perfis, amizades, campanhas, fichas, PDFs e sessões em tempo real dependem das rotas `/api/*`, do SQLite e do Socket.IO. Apenas criar `dist` ou adicionar redirects não coloca esses serviços em execução. As funcionalidades e o servidor existentes foram preservados.
+
+Para publicar a plataforma completa como está, o servidor precisa de uma hospedagem que execute `npm ci` e `npm start`, mantenha o processo Node ativo, permita Socket.IO/WebSockets e preserve `grimorio.sqlite` em armazenamento persistente. O próprio Express pode servir a interface e a API no mesmo domínio. Para manter a interface no Netlify, será necessário configurar a conexão com um backend externo já hospedado, incluindo API, PDFs e Socket.IO; esta versão ainda usa requisições para o mesmo domínio. Não foi configurado um destino fictício nem uma migração para Functions, pois isso exigiria adaptar a persistência e as sessões em tempo real.
+
 ## Administradores
 
 Somente administradores podem publicar livros e alterar o anúncio da página inicial. Para definir o administrador, inicie o servidor com o e-mail da conta desejada:

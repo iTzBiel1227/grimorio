@@ -1,0 +1,14 @@
+[build]
+  base = "."
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Navigation and login return URLs use physical .html pages.
+[build.processing.html]
+  pretty_urls = false
+
+# This is not a React SPA: there is no catch-all rewrite to index.html.
+# /api/* and /socket.io/* require the separate persistent Node server.
