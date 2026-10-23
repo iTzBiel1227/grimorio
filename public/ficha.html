@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08080a">
+  <title>Ficha — Grimório</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/ficha.css"><link rel="stylesheet" href="/platform.css">
+</head>
+<body class="sheet-body"><aside class="app-sidebar"><a class="side-brand" href="/"><span class="sigil"><i>✦</i></span><span class="brand-copy">GRIMÓRIO<b>.</b></span></a><nav class="side-nav"><a class="side-link" href="/"><span class="ico">⌂</span><span>Início</span></a><a class="side-link" href="/amigos.html"><span class="ico">♙</span><span>Amigos</span></a><a class="side-link" href="/campanha.html"><span class="ico">⚔</span><span>Campanhas</span></a><a class="side-link active" href="/ficha.html"><span class="ico">▤</span><span>Fichas</span></a><a class="side-link" href="/magias.html"><span class="ico">✦</span><span>Magias</span></a><a class="side-link" href="/livros.html"><span class="ico">▣</span><span>Livros</span></a></nav></aside>
+<div class="app-main">
+<header class="topbar sheet-topbar">
+  <a class="brand" href="/"><span class="brand-mark">✦</span><span class="brand-name">GRIMÓRIO</span></a>
+  <div class="sheet-top-actions">
+    <a class="button button-secondary compact" href="/">← Início</a>
+    <button id="editLayout" class="button button-secondary compact">⚙ Modo de edição</button>
+    <button id="saveSheet" class="button button-primary compact">Salvar ficha</button>
+  </div>
+</header>
+
+<main class="sheet-page">
+  <section id="sheetLibrary" class="sheet-library">
+    <div class="sheet-library-head"><div><div class="eyebrow"><span></span> PERSONAGENS</div><h1>Suas fichas</h1><p>Crie uma ficha modular e escolha exatamente o que ficará visível.</p></div><button id="newSheet" class="button button-primary">+ Criar ficha</button></div>
+    <div id="sheetCards" class="sheet-cards"></div>
+  </section>
+
+  <section id="sheetEditor" class="sheet-editor hidden">
+    <div class="sheet-toolbar">
+      <button id="backLibrary" class="text-button">← Minhas fichas</button>
+      <div class="sheet-session-link"><label for="rollCampaign">Mesa para rolagens</label><select id="rollCampaign"><option value="">Somente nesta ficha</option></select><span id="liveRollState" class="sheet-live-state">offline</span></div>
+      <div class="theme-picker" id="themePicker"><span>TEMA</span><button class="theme-swatch active" data-theme="red" title="Vermelho"></button><button class="theme-swatch" data-theme="blue" title="Azul"></button><button class="theme-swatch" data-theme="white" title="Branco"></button><button class="theme-swatch" data-theme="purple" title="Roxo"></button><button class="theme-swatch" data-theme="green" title="Verde"></button></div><span id="saveStatus">Alterações não salvas</span>
+    </div>
+
+    <div id="layoutConfigurator" class="layout-config panel hidden"><div><span class="mini-label">ESTRUTURA DA FICHA</span><h2>Escolha os módulos e reorganize</h2><p>Com o modo de edição ativo, arraste atributos, recursos, perícias e blocos para personalizar a disposição. As informações continuam fixas; somente a posição muda.</p></div><div id="moduleToggles" class="module-toggles"></div></div>
+
+    <div class="sheet-shell three-column-shell">
+      <button class="side-tab left inventory-tab" data-panel="inventory" title="Inventário"><span>🎒</span><small>Inventário</small></button>
+      <button class="side-tab left passives-tab" data-panel="passives" title="Passivas"><span>◈</span><small>Passivas</small></button>
+      <button class="side-tab right story-tab" data-panel="story" title="História"><span>▣</span><small>História</small></button>
+
+      <aside id="sidePanel" class="sheet-side-panel hidden"><div class="side-panel-head"><div><span class="mini-label">GRIMÓRIO DO PERSONAGEM</span><h2 id="sidePanelTitle"></h2></div><button id="closePanel" class="icon-button">×</button></div><div id="sidePanelContent"></div></aside>
+
+      <div id="sheetWorkspace" class="sheet-workspace" data-theme="red">
+        <section class="sheet-column general-column panel">
+          <div class="column-tab"><span>GERAL</span></div>
+          <section class="identity-stack module" data-module="identity">
+            <div class="portrait-box"><img id="portraitPreview" class="hidden" alt="Retrato"><div id="portraitPlaceholder">✦</div><label class="portrait-upload">Escolher retrato<input id="portraitInput" type="file" accept="image/png,image/jpeg,image/webp"></label></div>
+            <div class="sheet-kicker">REGISTRO DO PERSONAGEM</div>
+            <input id="charName" class="character-name" placeholder="NOME DO PERSONAGEM">
+            <div class="basic-fields">
+              <label>Sexo<input id="charSex" placeholder="—"></label><label>Idade<input id="charAge" type="number" min="0" placeholder="—"></label><label>Poder<input id="charPower" type="number" value="0"></label><label>CD<input id="charCD" type="number" value="10"></label>
+            </div>
+          </section>
+          <section id="attributesModule" class="module" data-module="attributes"><div class="section-title"><span>ATRIBUTOS</span><i></i></div><div id="attributesGrid" class="attributes-grid"></div></section>
+          <section id="resourcesModule" class="module" data-module="resources"><div class="section-title"><span>RECURSOS</span><i></i></div><div id="resourcesGrid" class="resources-grid"></div></section>
+        </section>
+
+        <section class="sheet-column records-column panel">
+          <div class="inner-tabs" role="tablist"><button class="inner-tab active" data-center-tab="skills">PERÍCIAS</button><button class="inner-tab" data-center-tab="combat">COMBATE</button><button class="inner-tab" data-center-tab="abilities">HABILIDADES</button><button class="inner-tab" data-center-tab="passives">PASSIVAS</button></div>
+          <div id="centerSkills" class="center-view active"><div class="skills-tools"><input id="skillSearch" placeholder="Buscar perícia"><small>Clique no nome para rolar D20 + valor.</small></div><section id="skillsModule" class="module" data-module="skills"><div id="skillsGrid" class="skills-grid"></div></section></div>
+          <div id="centerCombat" class="center-view hidden"><div class="skills-tools"><span class="mini-label">PERÍCIAS DE COMBATE</span><small>Rolagens de combate são enviadas para a mesa conectada.</small></div><section id="combatModule" class="module" data-module="combat"><div id="combatGrid" class="skills-grid combat-grid"></div></section></div>
+          <div id="centerAbilities" class="center-view hidden"><div id="abilitiesCenter"></div></div>
+          <div id="centerPassives" class="center-view hidden"><div id="passivesCenter"></div></div>
+        </section>
+
+        <section class="sheet-column dice-column panel">
+          <div class="column-tab"><span>DADOS</span></div>
+          <div class="dice-stage">
+            <div id="diceChoices" class="dice-choices">
+              <button class="die-choice" data-sides="4"><span class="die-shape d4">4</span><small>D4</small></button>
+              <button class="die-choice" data-sides="6"><span class="die-shape d6">6</span><small>D6</small></button>
+              <button class="die-choice" data-sides="8"><span class="die-shape d8">8</span><small>D8</small></button>
+              <button class="die-choice" data-sides="10"><span class="die-shape d10">10</span><small>D10</small></button>
+              <button class="die-choice" data-sides="12"><span class="die-shape d12">12</span><small>D12</small></button>
+              <button class="die-choice active" data-sides="20"><span class="die-shape d20">20</span><small>D20</small></button>
+              <button class="die-choice" data-sides="100"><span class="die-shape d100">100</span><small>D100</small></button>
+            </div>
+            <div class="dice-modifier"><label for="manualModifier">Bônus</label><input id="manualModifier" type="number" value="0"></div>
+            <button id="manualRoll" class="button button-primary dice-roll-button">ROLAR <span>◆</span></button>
+            <div id="manualResult" class="manual-result"><span>ÚLTIMA ROLAGEM</span><strong>—</strong><small>Escolha um dado e role o destino.</small></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<div id="sheetToast" class="toast hidden"></div>
+<script src="/socket.io/socket.io.js"></script><script src="/shell.js"></script><script src="/ficha.js"></script>
+</body></html>

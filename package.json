@@ -1,0 +1,20 @@
+{
+  "name": "grimorio-rpg",
+  "version": "1.0.0",
+  "description": "Grimório — plataforma de RPG com contas, campanhas e mesa em tempo real",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/*.test.js",
+    "test:api": "node tests/api-smoke.mjs",
+    "test:content": "node tests/content-api.mjs",
+    "test:friends": "node tests/friends-api.mjs",
+    "sync": "node scripts/sync-github.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}

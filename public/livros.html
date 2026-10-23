@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Livros — Grimório</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/platform.css">
+  <link rel="stylesheet" href="/books.css">
+</head>
+<body class="books-page">
+  <aside class="app-sidebar">
+    <a class="side-brand" href="/"><span class="sigil"><i>✦</i></span><span class="brand-copy">GRIMÓRIO<b>.</b></span></a>
+    <nav class="side-nav" aria-label="Navegação principal">
+      <a class="side-link" href="/"><span class="ico">⌂</span><span>Início</span></a>
+      <a class="side-link" href="/amigos.html"><span class="ico">♙</span><span>Amigos</span></a>
+      <a class="side-link" href="/campanha.html"><span class="ico">⚔</span><span>Campanhas</span></a>
+      <a class="side-link" href="/ficha.html"><span class="ico">▤</span><span>Fichas</span></a>
+      <a class="side-link" href="/magias.html"><span class="ico">✦</span><span>Magias</span></a>
+      <a class="side-link active" href="/livros.html" aria-current="page"><span class="ico">▣</span><span>Livros</span></a>
+    </nav>
+    <div class="side-bottom"><a class="side-link" href="/sugestoes.html"><span class="ico">✎</span><span>Sugestões</span></a></div>
+  </aside>
+  <div class="app-main">
+    <main class="page-shell">
+      <header class="page-head library-heading">
+        <div><span class="mini-label">CONHECIMENTO PARA A SUA JORNADA</span><h1>Biblioteca</h1><p>Regras, mundos e novas histórias. Abra um livro e consulte seu PDF aqui mesmo.</p></div>
+        <button id="adminAdd" type="button" class="button button-primary" hidden>+ Adicionar livro</button>
+      </header>
+      <div class="library-toolbar"><span>CATÁLOGO DE LIVROS</span><span id="bookCount" class="library-count">Carregando…</span></div>
+      <p id="libraryNotice" class="library-notice" role="status" aria-live="polite"></p>
+      <section id="books" class="library-grid" aria-label="Livros disponíveis" aria-busy="true"></section>
+    </main>
+  </div>
+
+  <dialog id="bookUpload" class="panel book-editor" aria-labelledby="uploadTitle">
+    <button type="button" class="modal-close" data-close-upload aria-label="Fechar cadastro de livro">×</button>
+    <span class="mini-label">EXPANDA A BIBLIOTECA</span>
+    <h2 id="uploadTitle">Adicionar livro</h2>
+    <p class="book-editor-intro">Anexe o PDF para disponibilizar a leitura no catálogo.</p>
+    <form id="bookForm">
+      <label for="bookTitle">Título do livro</label>
+      <input id="bookTitle" name="title" maxlength="120" placeholder="Ex.: Grimório — Livro de Regras" required>
+      <label for="bookDescription">Descrição <span>(opcional)</span></label>
+      <textarea id="bookDescription" name="description" rows="3" maxlength="1000" placeholder="O que os aventureiros encontrarão neste livro?"></textarea>
+      <label for="bookPdf">Arquivo PDF</label>
+      <div class="book-file-box"><span class="book-file-icon" aria-hidden="true">PDF</span><div><input id="bookPdf" name="pdf" type="file" accept="application/pdf,.pdf" required aria-describedby="pdfHint"><small id="pdfHint">Até 20 MB. O arquivo ficará disponível para leitura e download.</small></div></div>
+      <label for="bookCover">Capa do livro <span>(opcional)</span></label>
+      <div class="book-cover-input"><img id="coverPreview" alt="Prévia da capa selecionada" hidden><div><input id="bookCover" name="cover" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="coverHint"><small id="coverHint">JPG, PNG ou WebP de até 3 MB.</small><button type="button" id="removeCover" class="text-button" hidden>Remover capa</button></div></div>
+      <p id="bookFormError" class="book-form-error" role="alert"></p>
+      <div class="book-editor-actions"><button type="button" class="button button-secondary" data-close-upload>Cancelar</button><button id="publishBook" class="button button-primary" type="submit">Publicar no catálogo</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="bookReader" class="book-reader" aria-labelledby="readerTitle">
+    <header class="book-reader-header"><div><span class="mini-label">LEITOR GRIMÓRIO · PDF</span><h2 id="readerTitle">Livro</h2></div><button id="closeReader" type="button" class="button button-secondary">Fechar <span aria-hidden="true">×</span></button></header>
+    <div class="book-reader-tools"><p>Use os controles do PDF para navegar e ajustar o zoom.</p><div><a id="readerOpen" class="button button-secondary" target="_blank" rel="noopener">Abrir em nova aba ↗</a><a id="readerDownload" class="button button-secondary" download>Baixar PDF ↓</a></div></div>
+    <iframe id="pdfFrame" title="Leitor de PDF do livro" src="about:blank"></iframe>
+    <p class="reader-fallback">O PDF não apareceu? Use “Abrir em nova aba” ou “Baixar PDF” acima.</p>
+  </dialog>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shell.js"></script>
+  <script src="/books.js"></script>
+</body>
+</html>

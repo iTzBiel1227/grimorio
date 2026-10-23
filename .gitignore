@@ -1,0 +1,39 @@
+# Dependencies and generated files
+node_modules/
+coverage/
+dist/
+*.log
+
+# Local accounts, sessions, campaigns and uploaded files
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+backups/
+uploads/
+
+# Credentials and machine-specific settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+.aws/
+.codex/
+.agents/
+
+# Disposable test/runtime files
+tests/.runtime-*
+tests/.*.cjs
+tests/.*.mjs
+.tmp/
+tmp/
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+.vscode/

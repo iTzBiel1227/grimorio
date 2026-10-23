@@ -1,0 +1,30 @@
+.platform-auth:not([open]){display:none}
+.platform-auth .modal-close{position:absolute;top:14px;right:16px;width:30px;height:30px;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:24px}
+.platform-auth .modal-close:hover{color:var(--text)}
+.account-profile{display:flex;align-items:center;gap:11px;max-width:min(420px,60vw);min-width:0;background:#ffffff04;border:1px solid #ffffff18;border-radius:5px;padding:6px 12px 6px 6px;color:var(--text);cursor:pointer;text-align:left;transition:background .2s,border-color .2s}
+.account-profile:hover{background:#ef33400c;border-color:#ef334060}
+.account-profile:focus-visible,.platform-auth button:focus-visible{outline:2px solid var(--red);outline-offset:4px}
+.account-profile .avatar-img,.account-profile .avatar-fallback{flex:0 0 38px;width:38px;height:38px;color:var(--text)}
+.platform-account-bar .account-profile-copy{display:grid;gap:3px;min-width:0;max-width:30vw;text-align:left}
+.account-profile-copy strong{color:var(--text);font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-profile-copy small{color:var(--muted);font-size:9px;letter-spacing:.05em}
+.platform-account-bar .account-status{font-size:11px;color:var(--green);white-space:normal}
+.account-editor{width:min(520px,calc(100vw - 32px))}
+.account-editor h2{margin-bottom:8px;font-size:30px}
+.account-intro{font-size:13px;line-height:1.6;color:var(--muted);margin-bottom:24px}
+.account-portrait{display:flex;gap:18px;align-items:center;padding:16px 0 22px;border-bottom:1px solid #ffffff12;margin-bottom:10px}
+#accountAvatarPreview{flex:0 0 84px}
+#accountAvatarPreview .avatar-img,#accountAvatarPreview .avatar-fallback{width:84px;height:84px;font-size:28px;border-color:#ef334050;box-shadow:0 0 24px #ef334010}
+.account-portrait-actions{min-width:0;display:grid;gap:8px}
+.account-portrait-actions label{margin:0}
+.account-portrait-actions input{font-size:11px;min-height:35px;padding:7px;max-width:100%}
+.account-portrait-actions input::file-selector-button{background:#29262c;border:1px solid #ffffff22;border-radius:2px;color:#eee;font-size:11px;padding:5px 8px;margin-right:7px;cursor:pointer}
+.account-portrait-actions small{color:var(--muted);font-size:10px;line-height:1.5}
+.account-remove-photo{width:fit-content;padding:0;border:0;background:none;color:#e7a0a5;font-size:11px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.account-editor [hidden]{display:none!important}
+.account-editor input:disabled{opacity:.6}
+.account-editor-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:10px}
+.sheet-body .sheet-topbar{grid-template-columns:1fr auto}
+.sheet-body .app-main>.sheet-topbar,.sheet-body .app-main>.sheet-page{margin-left:0}
+@media(max-width:560px){.platform-account-bar{gap:8px;flex-wrap:wrap}.platform-account-bar .account-status:not(:empty){width:100%;max-width:none;text-align:right}.platform-account-bar .account-profile-copy{max-width:26vw}.account-profile{gap:7px;padding-right:8px}.platform-account-bar #accountLogout{padding:0 10px;min-height:40px}.account-editor{padding:30px 20px}.account-portrait{gap:12px}#accountAvatarPreview{flex-basis:64px}#accountAvatarPreview .avatar-img,#accountAvatarPreview .avatar-fallback{width:64px;height:64px}.account-editor-actions{flex-wrap:wrap}.sheet-body .sheet-topbar{padding:0 15px;gap:10px}.sheet-body .sheet-topbar .brand-name{display:none}}
+@media(prefers-reduced-motion:reduce){.account-profile{transition:none}}
