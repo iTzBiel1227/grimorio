@@ -5,6 +5,7 @@
     return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
   }
   async function api(url, options = {}) {
+    if (window.GrimorioSupabase) return window.GrimorioSupabase.request(url, options);
     const response = await fetch(url, { ...options, headers: authHeaders(options.headers || {}) });
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data?.error || (response.status === 404 ? 'Esta função não está disponível no servidor. Atualize o servidor do Grimório e tente novamente.' : 'Não foi possível concluir.'));

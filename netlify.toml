@@ -11,4 +11,6 @@
   pretty_urls = false
 
 # This is not a React SPA: there is no catch-all rewrite to index.html.
-# /api/* and /socket.io/* require the separate persistent Node server.
+# The build uses supabase/frontend.json (URL and public publishable key only).
+# Optional overrides: SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY together.
+# GRIMORIO_BACKEND=sqlite explicitly builds the original Node-backed interface.

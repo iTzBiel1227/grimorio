@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -25,6 +25,7 @@ test('production build serves every page and local asset without exposing backen
   await writeFile(path.join(output, 'obsolete-build-test.txt'), 'stale deployment file');
   const build = spawnSync(process.execPath, ['scripts/build.mjs'], {
     cwd: project, encoding: 'utf8', windowsHide: true,
+    env: { ...process.env, GRIMORIO_BACKEND: 'sqlite', SUPABASE_URL: '', SUPABASE_PUBLISHABLE_KEY: '' },
   });
   assert.ifError(build.error);
   assert.equal(build.status, 0, build.stderr || build.stdout);
@@ -71,5 +72,38 @@ test('production build serves every page and local asset without exposing backen
     const response = await fetch(origin + route);
     assert.equal(response.status, 404, `${route} must not return index.html with status 200`);
     await response.text();
+  }
+});
+
+test('Supabase build connects every page to the bundled client and refuses secret keys', async t => {
+  const temporaryRoot = path.join(project, '.tmp');
+  await mkdir(temporaryRoot, { recursive: true });
+  const fixture = await mkdtemp(path.join(temporaryRoot, 'build-test-'));
+  t.after(async () => {
+    if (path.dirname(fixture) !== temporaryRoot) throw new Error('Unexpected test directory');
+    await rm(fixture, { recursive: true, force: true });
+  });
+  await mkdir(path.join(fixture, 'scripts'));
+  await cp(path.join(project, 'scripts/build.mjs'), path.join(fixture, 'scripts/build.mjs'));
+  await cp(source, path.join(fixture, 'public'), { recursive: true });
+  const execute = values => spawnSync(process.execPath, ['scripts/build.mjs'], {
+    cwd: fixture, encoding: 'utf8', windowsHide: true,
+    env: { ...process.env, GRIMORIO_BACKEND: 'supabase', SUPABASE_URL: 'https://example.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test', ...values },
+  });
+  const build = execute({});
+  assert.ifError(build.error);
+  assert.equal(build.status, 0, build.stderr);
+  const published = path.join(fixture, 'dist');
+  const runtime = await readFile(path.join(published, 'supabase-runtime.js'), 'utf8');
+  assert.ok(runtime.includes('https://example.supabase.co'));
+  for (const name of (await readdir(published)).filter(file => file.endsWith('.html'))) {
+    const html = await readFile(path.join(published, name), 'utf8');
+    assert.ok(html.indexOf('/supabase-runtime.js') < html.indexOf('/shell.js'), name);
+    assert.ok(!html.includes('/socket.io/socket.io.js'), name);
+  }
+  for (const key of ['sb_secret_do_not_publish', `header.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.signature`, '']) {
+    const rejected = execute({ SUPABASE_PUBLISHABLE_KEY: key });
+    assert.notEqual(rejected.status, 0, 'a secret or missing key must stop the build');
+    assert.ok(!rejected.stderr.includes('sb_secret_do_not_publish'), 'never log credential values');
   }
 });

@@ -1,6 +1,6 @@
 ﻿# Grimório
 
-Plataforma de RPG em Node.js, Express, SQLite e Socket.IO, com contas, perfis, campanhas, lobby, fichas, biblioteca de magias e catálogo de livros.
+Plataforma de RPG com contas, perfis, campanhas, lobby, fichas, biblioteca de magias e catálogo de livros. A publicação usa Supabase Auth, PostgreSQL, Storage e Realtime. O modo original em Node.js, Express, SQLite e Socket.IO continua disponível localmente.
 
 ## Executar
 
@@ -42,15 +42,28 @@ No Netlify, confira que o projeto está conectado a esse repositório e branch. 
 
 Não é necessário criar `public/_redirects` com `/* /index.html 200`: essa regra atende SPAs com roteador no navegador. Aqui, cada rota já possui seu HTML; a regra também esconderia erros de `/api/*` e `/socket.io/*`, devolvendo a página inicial onde o cliente espera JSON ou JavaScript. Consulte o [guia oficial de erro 404](https://docs.netlify.com/resources/troubleshooting/page-not-found-error-guide/) e a [configuração por arquivo](https://docs.netlify.com/build/configure-builds/file-based-configuration/).
 
-### Backend necessário para as funcionalidades
+### Supabase na publicação
 
-**Esse deploy no Netlify publica a interface estática; não inicia `server.js`.** Login, perfis, amizades, campanhas, fichas, PDFs e sessões em tempo real dependem das rotas `/api/*`, do SQLite e do Socket.IO. Apenas criar `dist` ou adicionar redirects não coloca esses serviços em execução. As funcionalidades e o servidor existentes foram preservados.
+O build agora usa `supabase/frontend.json`, com a URL e a **chave pública publishable** do projeto Grimório (`fisrzivzjfehmdnoxfkx`). Ele inclui o cliente oficial em `dist/supabase-runtime.js` antes dos scripts das páginas e conecta os fluxos existentes ao Supabase. Login, fichas, magias, campanhas, amizades, perfil, catálogo e anúncio usam Auth/PostgreSQL; os PDFs usam Storage; sessões, peças, dados e chat usam Realtime. Assim, o modo Supabase não precisa executar `server.js` no Netlify.
 
-Para publicar a plataforma completa como está, o servidor precisa de uma hospedagem que execute `npm ci` e `npm start`, mantenha o processo Node ativo, permita Socket.IO/WebSockets e preserve `grimorio.sqlite` em armazenamento persistente. O próprio Express pode servir a interface e a API no mesmo domínio. Para manter a interface no Netlify, será necessário configurar a conexão com um backend externo já hospedado, incluindo API, PDFs e Socket.IO; esta versão ainda usa requisições para o mesmo domínio. Não foi configurado um destino fictício nem uma migração para Functions, pois isso exigiria adaptar a persistência e as sessões em tempo real.
+As variáveis `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY`, se definidas juntas, substituem a configuração pública versionada. O build rejeita chaves secretas e `service_role`. A autorização é feita por RLS e funções do banco, nunca pela confiança no navegador.
+
+Para visualizar esse mesmo build localmente:
+
+```powershell
+npm.cmd run build
+npm.cmd run preview
+```
+
+Abra http://localhost:3001. `npm.cmd start` continua executando o aplicativo SQLite original. Para gerar a interface original explicitamente, defina `GRIMORIO_BACKEND=sqlite` antes do build.
+
+O schema do Supabase foi aplicado por migração versionada; veja [modelo, permissões e configuração](supabase/README.md). `config.toml` inclui `remotes.main` para configurar a URL do Auth pela integração GitHub quando o deploy de produção estiver habilitado. Confira em **Authentication → URL Configuration** a URL principal `https://scintillating-gumdrop-62c133.netlify.app/`. Não é necessário colar a migração novamente no SQL Editor.
+
+As contas e os documentos antigos do SQLite não foram transferidos nem apagados. O Supabase começa com cadastro próprio: crie sua conta no site e confirme o e-mail. A conta de administrador previamente autorizada foi reservada no banco privado e recebe o papel após confirmar o endereço.
 
 ## Administradores
 
-Somente administradores podem publicar livros e alterar o anúncio da página inicial. Para definir o administrador, inicie o servidor com o e-mail da conta desejada:
+Somente administradores podem publicar livros e alterar o anúncio da página inicial. No Supabase, administradores são definidos pelo responsável pelo projeto no banco privado, com confirmação do e-mail; o usuário não consegue promover a própria conta. No modo local SQLite, inicie o servidor com o e-mail da conta desejada:
 
 ```powershell
 $env:ADMIN_EMAIL = "seu-email@exemplo.com"

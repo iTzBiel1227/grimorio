@@ -1,5 +1,5 @@
 const token=localStorage.getItem('grimorio_auth_token');
-if(!token) Grimorio.loginRedirect();
+if(!token&&!window.GrimorioSupabase) Grimorio.loginRedirect();
 const H={'Content-Type':'application/json',Authorization:`Bearer ${token}`};
 const $=s=>document.querySelector(s); const $$=s=>[...document.querySelectorAll(s)];
 const ATTR=['CARISMA','CONSTITUIÇÃO','DESTREZA','FORÇA','INTELIGÊNCIA','PODER'];
@@ -11,7 +11,7 @@ const sheetSocket=io();
 let currentUser=null;
 const fresh=()=>({name:'',sex:'',age:'',power:0,cd:10,portrait:'',theme:'red',modules:{identity:true,resources:true,attributes:true,skills:true,combat:true},resources:{vida:{label:'Vida',current:10,max:10,visible:true},energia:{label:'Energia / Mana',current:10,max:10,visible:true},sanidade:{label:'Sanidade',current:10,max:10,visible:true}},attributes:Object.fromEntries(ATTR.map(x=>[x,0])),skills:Object.fromEntries(SKILLS.map(x=>[x,0])),combat:Object.fromEntries(COMBAT.map(x=>[x,0])),abilities:[],passives:[],inventory:[],story:'',layoutPositions:{}});
 function toast(m,e=false){const t=$('#sheetToast');t.textContent=m;t.classList.remove('hidden','error');if(e)t.classList.add('error');setTimeout(()=>t.classList.add('hidden'),2600)}
-async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{...H,...opt.headers}});if(r.status===401){localStorage.removeItem('grimorio_auth_token');Grimorio.loginRedirect();throw Error('Sessão expirada')}if(!r.ok){let x={};try{x=await r.json()}catch{}throw Error(x.error||'Não foi possível concluir.')}return r.status===204?null:r.json()}
+async function api(url,opt={}){if(window.GrimorioSupabase){try{return await Grimorio.api(url,opt)}catch(error){if(error.status===401)Grimorio.loginRedirect();throw error}}const r=await fetch(url,{...opt,headers:{...H,...opt.headers}});if(r.status===401){localStorage.removeItem('grimorio_auth_token');Grimorio.loginRedirect();throw Error('Sessão expirada')}if(!r.ok){let x={};try{x=await r.json()}catch{}throw Error(x.error||'Não foi possível concluir.')}return r.status===204?null:r.json()}
 async function loadLibrary(){const x=await api('/api/sheets');const c=$('#sheetCards');c.innerHTML='';if(!x.sheets.length)c.innerHTML='<div class="empty-sheet panel"><strong>Nenhuma ficha criada.</strong><p>Seu próximo personagem pode começar aqui.</p></div>';x.sheets.forEach(s=>{const el=document.createElement('article');el.className='sheet-card panel';el.innerHTML=`<div class="sheet-card-rune">✦</div><span class="mini-label">PERSONAGEM</span><h3>${esc(s.name)}</h3><p>Atualizada em ${new Date(s.updatedAt).toLocaleDateString('pt-BR')}</p><div><button class="button button-secondary open">Abrir ficha</button><button class="icon-button del" title="Excluir">×</button></div>`;el.querySelector('.open').onclick=()=>openSheet(s.id);el.querySelector('.del').onclick=async()=>{if(confirm('Excluir esta ficha?')){await api('/api/sheets/'+s.id,{method:'DELETE'});loadLibrary()}};c.append(el)})}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function openSheet(id){const s=await api('/api/sheets/'+id);currentId=id;data={...fresh(),...s.data,modules:{...fresh().modules,...s.data.modules},resources:{...fresh().resources,...s.data.resources}};$('#sheetLibrary').classList.add('hidden');$('#sheetEditor').classList.remove('hidden');render();dirty=false;status()}
@@ -64,7 +64,7 @@ async function loadRollCampaigns(){
 }
 function connectRollCampaign(code){
   rollCampaignCode=code||''; const state=$('#liveRollState');
-  if(!code){state.textContent='offline';state.classList.remove('live');return}
+  if(!code){sheetSocket.emit('room:leave');state.textContent='offline';state.classList.remove('live');return}
   const opt=[...$('#rollCampaign').options].find(o=>o.value===code); const player=opt?.dataset.player||currentUser?.displayName||'Aventureiro';
   sheetSocket.emit('room:join',{code,playerName:player}); state.textContent='conectando…';
 }

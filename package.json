@@ -5,17 +5,24 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
     "test:api": "node tests/api-smoke.mjs",
     "test:content": "node tests/content-api.mjs",
     "test:friends": "node tests/friends-api.mjs",
+    "test:supabase:remote": "node scripts/check-supabase.mjs",
     "sync": "node scripts/sync-github.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
     "better-sqlite3": "^12.2.0",
     "express": "^5.1.0",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "esbuild": "^0.28.2"
   }
 }

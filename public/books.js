@@ -142,12 +142,12 @@
   }
 
   function openReader(book) {
-    const url = `/api/books/${encodeURIComponent(book.id)}/pdf`;
+    const url = globalThis.GrimorioSupabase ? globalThis.GrimorioSupabase.publicPdfUrl(book) : `/api/books/${encodeURIComponent(book.id)}/pdf`;
     byId('readerTitle').textContent = book.title;
     frame.title = `Leitor de PDF — ${book.title}`;
     frame.src = `${url}#view=FitH`;
     byId('readerOpen').href = url;
-    byId('readerDownload').href = `${url}?download=1`;
+    byId('readerDownload').href = globalThis.GrimorioSupabase ? globalThis.GrimorioSupabase.publicPdfUrl(book, true) : `${url}?download=1`;
     byId('readerDownload').download = `${book.title.replace(/[<>:"/\\|?*]/g, '_')}.pdf`;
     if (!reader.open) reader.showModal();
     const address = new URL(location.href);

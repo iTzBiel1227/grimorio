@@ -21,10 +21,10 @@ try {
     if (ahead || git('status', '--porcelain')) throw new Error('O GitHub tem mudanças novas. Integre-as ao trabalho local antes de sincronizar.');
     run('git', ['merge', '--ff-only', 'origin/main']);
   }
-  run(process.execPath, ['scripts/build.mjs']);
   const tests = readdirSync(new URL('../tests/', import.meta.url)).filter(file => file.endsWith('.test.js')).map(file => `tests/${file}`);
   run(process.execPath, ['--test', ...tests]);
   for (const file of ['api-smoke.mjs', 'content-api.mjs', 'friends-api.mjs']) run(process.execPath, [`tests/${file}`]);
+  run(process.execPath, ['scripts/build.mjs']);
   run('git', ['add', '--all']);
   if (git('diff', '--cached', '--name-only')) {
     const message = process.argv.slice(2).join(' ').trim() || 'Atualiza o Grimório';
