@@ -18,5 +18,6 @@ jobs:
       - run: npm run test:api
       - run: npm run test:content
       - run: npm run test:friends
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+        env:
+          GRIMORIO_TEST_BROWSER: chrome

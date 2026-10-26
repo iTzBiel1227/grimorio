@@ -143,6 +143,8 @@ npm.cmd run test:e2e
 
 O teste E2E inicia um servidor com SQLite temporário e usa contextos separados do Chromium para simular mestre e jogador. Exercita solicitações de amizade, convites, presença, pastas, acesso por papel, edição compartilhada de fichas, animação do dado, histórico, administração e layout móvel. Capturas ficam em `.tmp/screenshots/`, fora do Git. Esses testes locais não substituem a verificação do envio e confirmação de e-mail no Supabase hospedado.
 
+No GitHub Actions, `GRIMORIO_TEST_BROWSER=chrome` usa o [Chrome já instalado no ambiente Ubuntu](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md), evitando reinstalar navegador e dependências a cada envio. Localmente, o padrão continua sendo o Chromium instalado pelo Playwright.
+
 ## GitHub e atualizações
 
 O repositório público é `iTzBiel1227/grimorio`, branch `main`. Envie alterações concluídas com:

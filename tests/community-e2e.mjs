@@ -12,7 +12,7 @@ let browser,errors='',pages=[];child.stderr.on('data',chunk=>errors+=chunk);
 const api=async(url,token,body,method=body?'POST':'GET')=>{const res=await fetch(origin+url,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:res.status,data:res.status===204?null:await res.json()};};
 try{
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error(errors||'Startup timeout')),10000);child.stdout.once('data',()=>{clearTimeout(timer);resolve();});child.once('exit',()=>{clearTimeout(timer);reject(Error(errors));});});
- browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ browser=await chromium.launch({headless:true,...(process.env.GRIMORIO_TEST_BROWSER?{channel:process.env.GRIMORIO_TEST_BROWSER}:{}),args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const accounts=[];for(const username of ['master','player','outsider']){const result=await api('/api/auth/register',null,{username,birthDate:'2000-01-01',email:username+'@example.test',password:'TestPassword123!'});assert.equal(result.status,201);accounts.push(result.data);}
  const [master,player,outsider]=accounts;
  assert.equal((await api('/api/auth/register',null,{username:'PLAYER',birthDate:'2000-01-01',email:'duplicate@example.test',password:'TestPassword123!'})).status,409);
