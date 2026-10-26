@@ -2,6 +2,9 @@
 node_modules/
 coverage/
 dist/
+public/dice-runtime.js
+test-results/
+playwright-report/
 *.log
 
 # Local accounts, sessions, campaigns and uploaded files

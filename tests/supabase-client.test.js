@@ -21,7 +21,7 @@ function harness({ authSession = session, role = 'user', respond = () => ({ data
       const call = { type: 'query', table, operations: [] };
       calls.push(call);
       const query = {};
-      for (const name of ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'in', 'or', 'order', 'single', 'maybeSingle']) {
+      for (const name of ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'in', 'or', 'order', 'limit', 'lt', 'single', 'maybeSingle']) {
         query[name] = (...args) => { call.operations.push({ name, args: plain(args) }); return query; };
       }
       query.then = (resolve, reject) => Promise.resolve(table === 'profiles' && call.operations.some(op => op.name === 'single')
@@ -63,7 +63,9 @@ test('Supabase uses its current auth session and maps profiles without relying o
 
 test('email-confirmation signup never invents a session and guests get a login status for protected data', async () => {
   const { adapter } = harness({ authSession: null });
-  await assert.rejects(adapter.request('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: 'a@example.test', password: 'password' }) }), /confirme o cadastro/);
+  const registered=await adapter.request('/api/auth/register', { method: 'POST', body: JSON.stringify({ username:'adventurer',birthDate:'2000-01-01',email: 'a@example.test', password: 'password' }) });
+  assert.equal(registered.requiresConfirmation,true);
+  assert.equal(registered.token,undefined);
   await assert.rejects(adapter.request('/api/sheets'), error => error.status === 401);
   assert.equal((await adapter.request('/api/content/permissions')).canManageContent, false);
 });
@@ -90,10 +92,10 @@ test('PDF publication is admin-only and removes its own upload when metadata ins
 test('sheet writes stay scoped to the authenticated owner and preserve JSON data', async () => {
   const { adapter, calls } = harness({ respond: () => ({ data: { id: 'sheet-id', name: 'Aventureiro', data_json: { name: 'Aventureiro', story: 'História', layoutPositions: { identity: { x: 3 } } } } }) });
   const data = { name: 'Aventureiro', story: 'História', layoutPositions: { identity: { x: 3 } } };
-  const saved = await adapter.request('/api/sheets/sheet-id', { method: 'PUT', body: JSON.stringify({ data, user_id: 'attacker-selected-user' }) });
+  const saved = await adapter.request('/api/sheets/sheet-id', { method: 'PUT', body: JSON.stringify({ data, expectedVersion:3,user_id: 'attacker-selected-user' }) });
   assert.deepEqual(plain(saved.data), data);
   assert.ok(calls[0].operations.some(op => op.name === 'eq' && op.args[0] === 'user_id' && op.args[1] === 'own-user'));
-  assert.deepEqual(calls[0].operations.find(op => op.name === 'update').args[0], { name: 'Aventureiro', data_json: data });
+  assert.deepEqual(calls.find(call=>call.type==='rpc').args,{p_sheet_id:'sheet-id',p_name:'Aventureiro',p_data:data,p_expected_version:3});
 });
 
 test('campaign and friend operations use database RPC contracts with names and account-code strings', async () => {

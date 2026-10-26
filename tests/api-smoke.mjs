@@ -13,7 +13,7 @@ let errors=''; child.stderr.on('data',chunk=>errors+=chunk);
 try {
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server startup timeout: '+errors)),10000);child.stdout.once('data',()=>{clearTimeout(timer);resolve()});child.once('exit',code=>{clearTimeout(timer);reject(Error('Server exited '+code+': '+errors))})});
   const request=async(url,body,token)=>{const res=await fetch(`http://localhost:${port}${url}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:res.status,data:res.status===204?null:await res.json()}};
-  const account=await request('/api/auth/register',{email:'regression@example.test',password:'test-password-123'});assert.equal(account.status,201);
+  const account=await request('/api/auth/register',{username:'regression',birthDate:'2000-01-01',email:'regression@example.test',password:'test-password-123'});assert.equal(account.status,201);
   const token=account.data.token;
   assert.equal((await request('/api/campaigns',{name:'   '},token)).status,400);
   const created=await request('/api/campaigns',{name:'  As Cinzas do Reino  '},token);assert.equal(created.status,201);assert.equal(created.data.campaign.name,'As Cinzas do Reino');

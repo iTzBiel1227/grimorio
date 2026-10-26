@@ -1,58 +1,114 @@
 # Banco do Grimório
 
-Projeto: [Grimório](https://supabase.com/dashboard/project/fisrzivzjfehmdnoxfkx), PostgreSQL 17. A inspeção anterior à implantação encontrou zero tabelas de aplicação, zero contas, zero buckets e zero migrações. A migração `20261025200849_grimorio.sql` foi aplicada e seu nome local coincide com o histórico remoto, evitando reaplicação pela integração GitHub.
+Projeto: [Grimório](https://supabase.com/dashboard/project/fisrzivzjfehmdnoxfkx), PostgreSQL 17. A inspeção anterior à implantação inicial encontrou o schema de aplicação vazio. O projeto usa migrações versionadas em `supabase/migrations/`; alterações novas devem ser acrescentadas ao histórico, preservando os dados existentes.
 
-A migração complementar `20261025201458_preserve_sheet_portraits.sql` preserva o limite de retrato de 3 MB da ficha: o JSON aceita até 6 MiB para acomodar a imagem convertida em base64 e os demais campos. Ambas foram aplicadas e verificadas no projeto remoto.
+A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campanhas. `preserve_sheet_portraits` mantém o retrato de até 3 MB dentro de um JSON de ficha limitado a 6 MiB. A migração `community_campaigns` acrescenta identidade de usuário, consentimento de amizade, convites, pastas, colaboração nas fichas, histórico de dados e administração explícita.
 
 ## Estrutura
 
 | Área | Tabelas / serviço |
 | --- | --- |
-| Cadastro, senha e sessão | Supabase Auth (`auth.users` e serviços internos) |
-| Nome, foto e código permanente de 8 números | `profiles` |
-| Fichas completas em JSON | `character_sheets` |
+| Cadastro, confirmação de e-mail, senha e sessão | Supabase Auth |
+| Nome de usuário único, nome de exibição, foto e código de 8 números | `profiles` |
+| Nascimento privado da conta | `account_details` |
+| Fichas em JSON, pasta e versão de edição | `character_sheets` |
+| Pastas e subpastas da biblioteca | `sheet_folders` |
+| Sinalização de versões para sincronizar fichas | `character_sheet_versions` |
 | Magias e habilidades | `grimoire_entries` |
-| Campanhas, convite, tabuleiro e rolagens | `campaigns` |
+| Campanhas, tabuleiro e últimas rolagens | `campaigns` |
 | Participantes e nome na mesa | `campaign_members` |
+| Convites de amigos para campanhas | `campaign_invitations` |
 | Anotações privadas do mestre | `campaign_notes` |
-| Atribuição de fichas | `campaign_sheet_assignments` |
-| Amigos por código ou nome | `friendships` |
+| Fichas atribuídas a jogadores | `campaign_sheet_assignments` |
+| Solicitações de amizade | `friend_requests` |
+| Amizades aceitas | `friendships` |
+| Histórico persistente das rolagens | `campaign_rolls` |
 | Chat público e privado por campanha | `campaign_messages` |
 | Sugestões | `suggestions` |
 | Catálogo e caminho do PDF | `books` |
-| Anúncio da página inicial | `site_settings` |
+| Textos da página inicial, vaquinha e anúncio | `site_settings` |
 | PDFs de até 20 MB | Bucket `book-pdfs` |
 
-Todas as 12 tabelas da aplicação têm RLS. Visitantes podem ler catálogo, PDFs e anúncio. Jogadores gerenciam suas fichas e magias; mestres podem ler/editar fichas cujos donos participam de sua campanha. Mensagens privadas ficam restritas ao remetente e destinatário, ambos participantes da mesma campanha. Notas do mestre ficam separadas do estado compartilhado. Somente administradores escrevem no catálogo, no bucket e no anúncio.
+As 18 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
 
-O banco valida nomes, tipos, tamanhos, vínculos e permissões, mesmo se alguém chamar a API diretamente. Criação/entrada em campanhas, amizades, movimentos e rolagens usam funções transacionais. As funções privilegiadas ficam em `grimorio_private`; os sete pontos de entrada públicos são `SECURITY INVOKER`, com execução permitida apenas a usuários autenticados. A entrada em campanha usa bloqueio de linha para respeitar o limite de 10 pessoas.
+## Contas, identidade e administração
 
-`grimorio_private.admin_emails` reserva os endereços de administradores. Não há acesso pelo navegador, nem políticas que liberem suas linhas a usuários. O aviso informativo `RLS Enabled No Policy` nessa tabela é intencional: os papéis do navegador não possuem acesso. Endereços pessoais são configurados diretamente no banco e não entram no repositório. O cadastro só aceita o nome de exibição do metadata; `role` e o código de conta não podem ser alterados pelo cliente.
+O cadastro em `/cadastro.html` envia nome de usuário, e-mail, senha e nascimento. O banco valida o nome de usuário, de 3 a 24 letras, números ou sublinhados, e impõe unicidade sem distinção entre maiúsculas e minúsculas. O nome de exibição é independente e editável. Nome de usuário, dono do perfil, código da conta e papel administrativo não podem ser alterados pela edição comum de perfil.
 
-## Conectar a interface
+Perfis anteriores à atualização recebem o nome de usuário `jogador_` seguido do código da conta. Novos códigos de conta são gerados pelo banco com oito números e restrição de unicidade. Datas de nascimento são armazenadas em `account_details`, separadas do diretório público e da publicação Realtime.
 
-`frontend.json` contém apenas URL e chave pública publishable. É apropriado para o navegador, e não contém senha do banco, chave secreta, token administrativo ou `service_role`. `npm run build` empacota o SDK oficial e configura as páginas para esse projeto. A chave pública sozinha não libera dados privados, que exigem sessão e RLS.
+A confirmação por e-mail permanece habilitada, conforme a decisão do usuário. Sem sessão retornada pelo Auth, o cadastro mostra a orientação para confirmar o endereço. Ele não cria um token fictício nem informa que a conta já está conectada. O SDK oficial gerencia persistência e renovação das sessões.
 
-No Netlify mantenha a branch `main`, comando `npm run build` e publicação `dist`. Não use o fallback SPA: as rotas são páginas HTML físicas. Não defina `GRIMORIO_BACKEND=sqlite` no deploy Supabase.
+Administradores usam o painel `/admin.html` para localizar uma conta existente pelo e-mail e conceder acesso após conferir seu perfil. As funções `admin_find_account` e `admin_grant_access` exigem um administrador autenticado; a concessão confere também o código da conta. O primeiro administrador precisa ser definido pelo responsável pelo projeto em um contexto confiável do banco.
 
-O Supabase deve permitir a URL `https://scintillating-gumdrop-62c133.netlify.app/` em **Authentication → URL Configuration**, como Site URL e Redirect URL. Para a prévia local, adicione `http://localhost:3001/`. Esses valores estão em `config.toml`; a integração GitHub precisa ter a produção habilitada para aplicar `remotes.main`. Se essa etapa não ocorrer, ajuste no [painel de URLs](https://supabase.com/dashboard/project/fisrzivzjfehmdnoxfkx/auth/url-configuration). Veja a [configuração por branch](https://supabase.com/docs/guides/deployment/branching/configuration) e a [documentação de redirecionamento](https://supabase.com/docs/guides/auth/redirect-urls).
+A migração `community_campaigns` remove a promoção automática baseada no antigo cadastro de e-mails reservados. `grimorio_private.admin_emails` permanece sem acesso pelos papéis do navegador, mas não promove novos cadastros. Um endereço informado no cadastro ou campos como `role` nos metadados não concedem administração. Administradores já existentes são preservados.
 
-O cadastro informa quando é necessário confirmar o e-mail; não simula uma sessão antes da confirmação. Para aceitar cadastros do público, confira também o provedor de e-mail em Auth: o serviço SMTP padrão do Supabase tem restrições de destinatários e envio. Um provedor SMTP próprio deve ser configurado no painel para uso público, sem colocar suas credenciais no Git.
+O painel permite editar os textos de apresentação e apoio da página inicial, gerenciar livros e consultar sugestões. O texto padrão descreve o Grimório como projeto amador, sem fins lucrativos, criado por amigos. O link da vaquinha aceita HTTPS e fica vazio enquanto a campanha de apoio estiver em preparação. Não há processamento de pagamentos no aplicativo.
+
+## Amizades, campanhas e presença
+
+`friend_requests` guarda pedidos pendentes. Somente o destinatário pode aceitar ou recusar; o remetente pode cancelar. A aceitação cria a amizade recíproca em `friendships`. Desfazer uma amizade remove os dois vínculos. Busca e respostas públicas expõem nome, avatar e código, sem divulgar e-mails.
+
+Somente o mestre envia convites de campanha a amigos. O destinatário aceita ou recusa em **Campanhas**; aceitar cria a participação sem abrir obrigatoriamente o lobby. Os convites podem ser gerenciados a partir do cartão da campanha ou do lobby. Convites e entrada por código usam funções transacionais, e o limite de 10 participantes inclui o mestre.
+
+Participação e presença são conceitos distintos: `campaign_members` conserva quem pertence à campanha, e os canais privados Realtime indicam quem está conectado. O lobby usa os identificadores autorizados dos participantes para atualizar os lugares ao redor da mesa.
+
+## Fichas e dados em tempo real
+
+Pastas pertencem ao usuário; o banco rejeita referências a pastas de outra conta e hierarquias cíclicas. A exclusão de uma pasta libera os vínculos das fichas e subpastas, preservando seus dados. Somente o dono organiza sua biblioteca, mesmo quando o mestre pode editar a ficha durante uma campanha.
+
+O mestre acessa as fichas dos participantes e sua biblioteca pessoal. Um jogador acessa suas fichas e as atribuídas a ele, sem obter acesso às fichas dos outros jogadores ou à biblioteca inteira do mestre. O mesmo controle se aplica à leitura, às alterações e à sincronização em tempo real.
+
+`save_character_sheet` verifica a versão esperada antes de salvar. Uma edição desatualizada é recusada, evitando que duas pessoas sobrescrevam silenciosamente as alterações uma da outra. `character_sheet_versions` publica uma sinalização pequena; os clientes autorizados buscam os dados atualizados da ficha. Retratos e todo o JSON não precisam circular como uma mensagem Realtime grande.
+
+`campaign_rolls` conserva o histórico completo, com resultado, bônus, total, autor, horário e semente da animação. O servidor calcula o resultado e o total; o navegador não os escolhe. As últimas rolagens também permanecem no estado da campanha por compatibilidade. O histórico anterior que estava nesse estado é transferido pela migração, e a interface carrega páginas de registros mais antigos quando solicitado.
+
+O modelo D20 do usuário em `public/assets/grimorio-d20.glb` é renderizado com Three.js e animado com física Cannon ES. Participantes recebem a mesma rolagem e semente para reproduzir a queda e o quique; a pose final apresenta o resultado definido pelo servidor. Movimento reduzido e ausência de WebGL preservam a leitura do resultado. As rolagens feitas nas fichas conectadas à campanha aparecem no tabuleiro e no histórico de todos os participantes.
+
+Notas do mestre ficam em tabela separada e não entram no estado público da campanha. Mensagens privadas ficam restritas a remetente e destinatário, ambos membros da mesma campanha. Permissões de canais privados e RLS continuam sendo exigidas mesmo quando alguém chama as APIs diretamente.
+
+## Funções e arquivos
+
+Validações de nomes, tamanhos, vínculos, transições e permissões são feitas no banco. As implementações privilegiadas ficam em `grimorio_private`, com `search_path` fixo e verificações do usuário autenticado. Os pontos de entrada públicos usam `SECURITY INVOKER` e permissões de execução limitadas. Não coloque chaves administrativas no navegador.
+
+O bucket `book-pdfs` oferece leitura pública de PDFs de até 20 MB, com escrita exclusiva de administradores. O painel permite trocar ou excluir arquivos e editar metadados/capas. Ao excluir um livro em destaque, a associação do anúncio é removida. Imagens do perfil, capas e anúncio mantêm validação de formato e tamanho.
+
+## Conectar e publicar
+
+`frontend.json` contém somente URL e chave pública publishable. Não contém senha, token administrativo ou `service_role`. `npm run build` empacota o SDK e conecta as páginas ao projeto configurado. Uma chave pública não libera dados privados: ainda é necessária uma sessão autorizada pelas políticas.
+
+No Netlify, use a branch `main`, comando `npm run build` e pasta `dist`. As rotas são páginas HTML físicas; não use fallback SPA nem defina `GRIMORIO_BACKEND=sqlite` no deploy Supabase. Para testar o build localmente, execute `npm run preview` e abra http://localhost:3001. Essa prévia usa o banco Supabase configurado.
+
+Em **Authentication → URL Configuration**, configure `https://scintillating-gumdrop-62c133.netlify.app/` como Site URL e Redirect URL. Adicione `http://localhost:3001/` para a prévia local. `config.toml` inclui essas URLs; a aplicação de `remotes.main` depende de a integração GitHub estar configurada para produção. Confira no [painel de URLs do projeto](https://supabase.com/dashboard/project/fisrzivzjfehmdnoxfkx/auth/url-configuration).
+
+Para cadastros públicos, configure o provedor de e-mail em Auth. O SMTP padrão do Supabase tem restrições de envio; credenciais de um provedor próprio devem ficar no painel, nunca no Git. A configuração de URLs não substitui a configuração do serviço de e-mail.
 
 ## Migrações e dados existentes
 
-Novas alterações devem ser adicionadas como novas migrações. Não altere a migração já aplicada nem use reset no projeto remoto. Com a integração GitHub habilitada, novas migrações podem ser publicadas a partir de `main`. O histórico remoto já registra a migração inicial deste repositório.
+Adicione alterações futuras como novas migrações. Não edite migrações já aplicadas nem execute reset no projeto remoto. Mantenha os nomes locais alinhados ao histórico remoto e confira as migrações existentes antes de aplicá-las novamente. A integração GitHub pode publicar novas migrações a partir de `main` quando estiver configurada para isso.
 
-O banco `grimorio.sqlite` permanece local e separado. Senhas e tokens locais não são sessões Supabase; contas e documentos não foram importados automaticamente. Uma importação posterior deve mapear os usuários para os IDs do Auth e transferir PDFs via Storage, sem publicar dados pessoais ou hashes no Git.
+O banco `grimorio.sqlite` continua local e separado. Contas, senhas, sessões, documentos e PDFs não foram importados automaticamente. Uma importação posterior precisa mapear usuários aos IDs do Auth e transferir arquivos via Storage, sem publicar dados pessoais, hashes ou credenciais no repositório.
 
 ## Verificação
 
 ```powershell
 npm.cmd test
+npm.cmd run test:api
+npm.cmd run test:content
+npm.cmd run test:friends
 npm.cmd run test:supabase:remote
 npm.cmd run build
 ```
 
-Os testes locais executam o SQL real em PostgreSQL/PGlite com representações dos schemas gerenciados do Supabase, verificando isolamento entre jogadores, permissões do mestre, metadados de cadastro, administração, códigos, chat, campanha e PDFs. Os testes do cliente e Realtime usam respostas simuladas. O teste remoto é somente leitura: verifica catálogo/anúncio públicos e bloqueio de perfis/campanhas sem autenticação. Ele não cria contas, não envia e-mails e não substitui a validação de cadastro/confirmação com o provedor de e-mail real.
+Os testes de banco executam SQL real em PostgreSQL/PGlite com representações dos schemas gerenciados do Supabase. Eles verificam isolamento entre contas, metadados de cadastro, unicidade, solicitações, convites, pastas, edições com versão, administração, rolagens, chat e PDFs. Testes do adaptador e Realtime usam respostas simuladas.
 
-Também foi executado um teste transacional no PostgreSQL hospedado: criação automática de perfil, campanha, entrada de jogador, ficha, rolagem e isolamento entre mestre/jogador/visitante. A transação foi revertida e a contagem final confirmou zero contas, campanhas ou fichas de teste persistidas.
+Para validar os fluxos no Chromium:
+
+```powershell
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
+```
+
+O E2E usa servidor e SQLite temporários, com dois contextos de navegador para mestre/jogador, e cobre presença, convites, fichas simultâneas, D20, histórico e controle de acesso. Capturas ficam em `.tmp/screenshots/`. Ele não altera o banco Supabase nem testa o envio real de e-mail.
+
+`test:supabase:remote` é somente leitura: confere conteúdo público e bloqueio de acesso sem autenticação. Não cria contas nem envia e-mails. A validação de cadastro e confirmação no ambiente hospedado depende do Auth e do provedor de e-mail reais; testes locais e de leitura não substituem essa etapa.

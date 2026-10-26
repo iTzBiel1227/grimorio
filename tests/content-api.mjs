@@ -85,8 +85,8 @@ const book = { title: `  ${title}  `, description: '  Edição de teste  ', pdfD
 
 try {
   await startServer();
-  const admin = await request('/api/auth/register', { method: 'POST', body: { email: 'admin@example.test', password: 'test-password-123' } });
-  const user = await request('/api/auth/register', { method: 'POST', body: { email: 'reader@example.test', password: 'test-password-123' } });
+  const admin = await request('/api/auth/register', { method: 'POST', body: { username:'admin',birthDate:'2000-01-01',email: 'admin@example.test', password: 'test-password-123' } });
+  const user = await request('/api/auth/register', { method: 'POST', body: { username:'reader',birthDate:'2000-01-01',email: 'reader@example.test', password: 'test-password-123' } });
   assert.equal(admin.status, 201);
   assert.equal(admin.data.user.role, 'admin');
   assert.equal(user.status, 201);
@@ -156,7 +156,7 @@ try {
   Buffer.from(pngData.split(',')[1], 'base64').copy(oversizedPng);
   assert.equal((await request('/api/profile', { method: 'PUT', body: { displayName: 'Must not persist', avatarData: `data:image/png;base64,${oversizedPng.toString('base64')}` }, token: userToken })).status, 400);
   assert.deepEqual((await request('/api/auth/me', { token: userToken })).data.user, updated.data.user);
-  assert.equal((await request('/api/auth/me', { token: adminToken })).data.user.displayName, '', 'Another account remains unchanged');
+  assert.equal((await request('/api/auth/me', { token: adminToken })).data.user.displayName, 'admin', 'Another account remains unchanged');
 
   // Verify database persistence, rather than just state retained by a running process.
   await stopServer();

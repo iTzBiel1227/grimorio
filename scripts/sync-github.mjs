@@ -22,8 +22,9 @@ try {
     run('git', ['merge', '--ff-only', 'origin/main']);
   }
   const tests = readdirSync(new URL('../tests/', import.meta.url)).filter(file => file.endsWith('.test.js')).map(file => `tests/${file}`);
+  run(process.execPath, ['scripts/build-dice.mjs']);
   run(process.execPath, ['--test', ...tests]);
-  for (const file of ['api-smoke.mjs', 'content-api.mjs', 'friends-api.mjs']) run(process.execPath, [`tests/${file}`]);
+  for (const file of ['api-smoke.mjs', 'content-api.mjs', 'friends-api.mjs', 'community-e2e.mjs']) run(process.execPath, [`tests/${file}`]);
   run(process.execPath, ['scripts/build.mjs']);
   run('git', ['add', '--all']);
   if (git('diff', '--cached', '--name-only')) {

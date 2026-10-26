@@ -16,7 +16,7 @@ async function req(url,token,body,method=body?'POST':'GET'){const response=await
 try{
  await start();
  const check=new Database(dbPath,{readonly:true});const old=check.prepare("SELECT account_code,role FROM users WHERE id='legacy'").get();check.close();assert.match(old.account_code,/^\d{8}$/);assert.equal(old.role,'admin');
- const accounts=[];for(let i=0;i<3;i++){const r=await req('/api/auth/register',null,{email:`friend${i}@example.test`,password:'test-password-123',accountCode:'11111111'});assert.equal(r.status,201);accounts.push(r.data);assert.match(r.data.user.accountCode,/^\d{8}$/);}
+ const accounts=[];for(let i=0;i<3;i++){const r=await req('/api/auth/register',null,{username:`friend${i}`,birthDate:'2000-01-01',email:`friend${i}@example.test`,password:'test-password-123',accountCode:'11111111'});assert.equal(r.status,201);accounts.push(r.data);assert.match(r.data.user.accountCode,/^\d{8}$/);}
  assert.equal(new Set(accounts.map(a=>a.user.accountCode)).size,3);
  const [a,b,c]=accounts;
  for(const acc of [b,c])assert.equal((await req('/api/profile',acc.token,{displayName:'João da Mesa',avatarData:''},'PUT')).status,200);
@@ -28,10 +28,21 @@ try{
  assert.equal((await req('/api/friends',a.token,{accountCode:'123'})).status,400);
  assert.equal((await req('/api/friends',a.token,{accountCode:b.user.accountCode})).status,200);
  assert.equal((await req('/api/friends',a.token,{accountCode:b.user.accountCode})).status,200);
+ assert.equal((await req('/api/friends',a.token)).data.friends.length,0);
+ const invitation=(await req('/api/friends',b.token)).data.incomingRequests[0];
+ assert.equal(invitation.person.id,a.user.id);
+ assert.equal((await req('/api/friend-requests/'+invitation.id+'/accept',a.token,{})).status,403);
+ assert.equal((await req('/api/friend-requests/'+invitation.id+'/accept',c.token,{})).status,403);
+ assert.equal((await req('/api/friend-requests/'+invitation.id+'/accept',b.token,{})).status,200);
  const list=(await req('/api/friends',a.token)).data.friends;assert.equal(list.length,1);assert.equal(list[0].accountCode,b.user.accountCode);assert.equal('email' in list[0],false);
  assert.equal((await req('/api/friends',b.token)).data.friends[0].id,a.user.id);
  assert.equal((await req('/api/users/search?q='+b.user.accountCode,a.token)).data.users[0].isFriend,true);
  await req('/api/profile',b.token,{displayName:'Outro nome',avatarData:'',accountCode:'99999999'},'PUT');assert.equal((await req('/api/auth/me',b.token)).data.user.accountCode,b.user.accountCode);
  await stop();await start();assert.equal((await req('/api/auth/me',b.token)).data.user.accountCode,b.user.accountCode);assert.equal((await req('/api/friends',a.token)).data.friends.length,1);
+ assert.equal((await req('/api/friends/'+b.user.id,a.token,undefined,'DELETE')).status,200);
+ assert.equal((await req('/api/friends',b.token)).data.friends.length,0);
+ const cancelled=(await req('/api/friends',a.token,{accountCode:b.user.accountCode})).data.request;
+ await req('/api/friend-requests/'+cancelled.id,a.token,undefined,'DELETE');
+ assert.equal((await req('/api/friends',b.token)).data.incomingRequests.length,0);
  console.log('OK: migração de contas existentes, códigos únicos, nomes repetidos, busca por nome/código, privacidade, amizade e persistência.');
 }finally{await stop();for(const file of [script,dbPath,dbPath+'-wal',dbPath+'-shm'])try{unlinkSync(file)}catch{}}

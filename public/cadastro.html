@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Criar conta — Grimório</title><meta name="description" content="Crie sua conta no Grimório e reúna seus amigos para a próxima aventura."><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/platform.css"><link rel="stylesheet" href="/account.css"></head>
+<body class="registration-page">
+<main class="registration-shell">
+  <section class="registration-story"><a class="registration-brand" href="/">GRIMÓRIO<span>.</span></a><div><span class="mini-label">TODA HISTÓRIA COMEÇA COM ALGUÉM</span><h1>Seu lugar<br>à mesa.</h1><p>Uma comunidade feita por amigos, para jogar RPG, criar mundos e compartilhar boas histórias.</p><ul><li>Organize personagens e campanhas</li><li>Encontre seus amigos pelo código da conta</li><li>Jogue e role dados em tempo real</li></ul></div><a href="/">← Voltar para o início</a></section>
+  <section class="registration-card panel" aria-labelledby="registrationTitle"><span class="mini-label">BEM-VINDO AO GRIMÓRIO</span><h2 id="registrationTitle">Criar sua conta</h2><p>Seu próximo personagem pode esperar. Primeiro, vamos conhecer você.</p>
+    <form id="registrationForm">
+      <label for="registrationUsername">Nome de usuário</label><input id="registrationUsername" name="username" autocomplete="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" aria-describedby="usernameHint" placeholder="seu_nome"><small id="usernameHint">Único no site. De 3 a 24 letras, números ou sublinhados.</small>
+      <label for="registrationEmail">E-mail</label><input id="registrationEmail" name="email" type="email" autocomplete="email" maxlength="254" placeholder="voce@exemplo.com" required>
+      <label for="registrationPassword">Senha</label><div class="password-field"><input id="registrationPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required aria-describedby="passwordHint"><button id="registrationShowPassword" type="button" aria-label="Mostrar senha" aria-pressed="false">Mostrar</button></div><small id="passwordHint">Use pelo menos 8 caracteres.</small>
+      <label for="registrationBirthDate">Nascimento</label><input id="registrationBirthDate" name="birthDate" type="date" autocomplete="bday" required aria-describedby="birthDateHint"><small id="birthDateHint">Sua data de nascimento não é exibida para outros jogadores.</small>
+      <p id="registrationError" class="auth-error" role="alert"></p><button id="registrationSubmit" class="button button-primary" type="submit">Criar conta e começar →</button>
+    </form><div id="registrationSuccess" class="registration-success" role="status" tabindex="-1" hidden><span aria-hidden="true">✦</span><h3>Sua aventura está quase começando.</h3><p>Conta criada. Confira seu e-mail <strong id="registrationSuccessEmail"></strong> e clique no link de confirmação para ativar seu acesso.</p><a class="button button-primary" href="/?login=1">Ir para o login →</a></div><p class="registration-login">Já tem uma conta? <a href="/?login=1">Fazer login</a></p>
+  </section>
+</main><script src="/shell.js"></script><script src="/cadastro.js"></script></body></html>

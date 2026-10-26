@@ -45,3 +45,7 @@ project_id = "fisrzivzjfehmdnoxfkx"
 [remotes.main.auth]
 site_url = "https://scintillating-gumdrop-62c133.netlify.app/"
 additional_redirect_urls = ["https://scintillating-gumdrop-62c133.netlify.app/", "http://localhost:3001/"]
+
+[remotes.main.auth.email]
+enable_signup = true
+enable_confirmations = true

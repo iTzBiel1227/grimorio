@@ -117,10 +117,29 @@
       const names = new Map(profiles.map(profile => [profile.id, profile.display_name]));
       members = new Map(rows.map(row => [row.user_id, {
         id: row.user_id,
+        userId: row.user_id,
         name: row.player_name || names.get(row.user_id) || 'Aventureiro'
       }]));
-      if (role === 'master') members.set(user.id, { id: user.id, name: 'Mestre' });
+      if (role === 'master') members.set(user.id, { id: user.id, userId: user.id, name: 'Mestre' });
       updatePresence(version);
+      dispatch('sheet:list-changed');
+      dispatch('campaign:members-changed');
+    }
+    async function receiveSheet(marker, version) {
+      if (!isCurrent(version) || !marker?.sheet_id) return;
+      const row = await checked(client.from('character_sheets').select('*').eq('id',marker.sheet_id).maybeSingle());
+      if (!isCurrent(version) || !row || !members.has(row.user_id)) return;
+      if (role !== 'master' && row.user_id !== user.id) {
+        const assignment = await checked(client.from('campaign_sheet_assignments').select('sheet_id').eq('campaign_id',campaign.id).eq('sheet_id',row.id).eq('assigned_user_id',user.id).maybeSingle());
+        if (!assignment || !isCurrent(version)) return;
+      }
+      dispatch('sheet:updated',{id:row.id,userId:row.user_id,name:row.name,data:row.data_json,folderId:row.folder_id,version:row.version,updatedAt:row.updated_at});
+      dispatch('sheet:list-changed');
+    }
+    function receiveRoll(row, version) {
+      if (!isCurrent(version) || row?.campaign_id!==campaign.id || seenRolls.has(row.id)) return;
+      seenRolls.add(row.id);
+      dispatch('dice:result',{id:row.id,player:row.player_name,characterName:row.character_name,label:row.label,sides:row.sides,value:row.value,modifier:row.modifier,total:row.total,seed:row.animation_seed,at:row.created_at,createdAt:row.created_at});
     }
     function updatePresence(version) {
       if (!isCurrent(version) || !channel) return;
@@ -214,6 +233,18 @@
           () => loadMembers(version).catch(report))
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_messages', filter: `campaign_id=eq.${campaign.id}` },
           event => receiveMessage(event.new, version))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'character_sheet_versions' },
+          event => {
+            if (event.eventType === 'DELETE') {
+              if (isCurrent(version)) dispatch('sheet:list-changed');
+              return;
+            }
+            receiveSheet(event.new,version).catch(error=>{if(isCurrent(version))report(error);});
+          })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_sheet_assignments', filter: `campaign_id=eq.${campaign.id}` },
+          () => {if(isCurrent(version))dispatch('sheet:list-changed');})
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_rolls', filter: `campaign_id=eq.${campaign.id}` },
+          event => receiveRoll(event.new,version))
         .subscribe(async status => {
           if (!isCurrent(version) || currentChannel !== channel) return;
           if (status === 'SUBSCRIBED') {

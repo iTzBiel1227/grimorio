@@ -6,12 +6,12 @@ import test from 'node:test';
 const source = readFileSync(new URL('../public/campaigns.js', import.meta.url), 'utf8');
 function harness(value, campaigns = []) {
   const nodes = new Map();
-  for (const id of ['create','join','campaignName','code','player','campaigns','campaignTotal','campaignMasterTotal','campaignPlayerTotal','campaignSearch','refreshCampaigns','campaignStatus','createError','joinError']) {
+  for (const id of ['create','join','campaignName','code','player','campaigns','campaignTotal','campaignMasterTotal','campaignPlayerTotal','campaignSearch','refreshCampaigns','campaignStatus','createError','joinError','campaignInvites','campaignInviteInbox','campaignInviteCount','campaignInviteFeedback']) {
     nodes.set('#' + id, { value: '', classList: {toggle(){}}, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, setCustomValidity(message) { this.validation = message; }, reportValidity() { return !nodes.get('#campaignName').validation; }, querySelector() { return this.button ||= {}; } });
   }
   nodes.get('#campaignName').value = value;
   const calls = [];
-  const context = { name: 'window.name is not the input', document: { querySelector: id => nodes.get(id), querySelectorAll: () => [] }, location: { search: '', href: '' }, URLSearchParams, alert: message => calls.push({ error: message }), Grimorio: { requireUser: async () => ({ id: 'tester' }), esc: String, api: async (url, options) => { calls.push({ url, options }); return url === '/api/my/campaigns' ? { campaigns } : { campaign: { code: 'ABC123' } }; } } };
+  const context = { name: 'window.name is not the input', document: { querySelector: id => nodes.get(id), querySelectorAll: () => [] },window:{addEventListener(){}},setInterval(){return 1},clearInterval(){}, location: { search: '', href: '' }, URLSearchParams, alert: message => calls.push({ error: message }), Grimorio: { requireUser: async () => ({ id: 'tester' }), esc: String, api: async (url, options) => { calls.push({ url, options }); return url === '/api/my/campaigns' ? { campaigns } : { campaign: { code: 'ABC123' } }; } } };
   return { nodes, calls, context };
 }
 test('campaign creation reads and trims the field despite window.name', async () => {

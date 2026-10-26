@@ -1,43 +1,104 @@
-﻿(async () => {
-  const {api,esc,avatar} = Grimorio;
+(async () => {
+  'use strict';
+  const { api, esc, avatar } = Grimorio;
   const user = await Grimorio.requireUser();
   if (!user) return;
   const el = id => document.getElementById(id);
-  const friendsBox = el('friends');
   const status = el('friendsStatus');
-  const results = el('searchResults');
-  let friends = [], found = [], searchVersion = 0;
-  const name = person => person.displayName || 'Aventureiro';
-  const card = (person, searching = false) => `<article class="panel person-card">${avatar(person)}<div class="person-meta"><strong>${esc(name(person))}</strong><small>#${esc(person.accountCode)}</small></div>${searching && !friends.some(f=>f.id===person.id) && !person.isFriend ? `<button type="button" class="button button-secondary" data-add="${esc(person.accountCode)}">Adicionar</button>` : '<span class="friend-badge">Amigo ✓</span>'}</article>`;
+  let friends = [], incoming = [], outgoing = [], found = [], searchVersion = 0, loading = false;
+  const name = person => person.displayName || person.username || 'Aventureiro';
+  const personOf = request => request.person || request.user || request;
+  const meta = person => `${avatar(person)}<div class="person-meta"><strong>${esc(name(person))}</strong>${person.username ? `<span class="person-username">@${esc(person.username)}</span>` : ''}<small>#${esc(person.accountCode || '')}</small></div>`;
+  const empty = (title, text) => `<div class="hub-empty"><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+  function searchCard(person) {
+    let action;
+    const received = incoming.find(request => personOf(request).id === person.id);
+    const sent = outgoing.find(request => personOf(request).id === person.id);
+    if (friends.some(friend => friend.id === person.id) || person.isFriend) action = '<span class="friend-badge">Amigo ✓</span>';
+    else if (received) action = `<button type="button" class="button button-primary" data-accept="${esc(received.id)}">Aceitar pedido</button>`;
+    else if (sent) action = '<span class="request-badge">Solicitação enviada</span>';
+    else action = `<button type="button" class="button button-secondary" data-add="${esc(person.accountCode)}">Solicitar amizade</button>`;
+    return `<article class="panel person-card">${meta(person)}<div class="person-actions">${action}</div></article>`;
+  }
+  function renderResults() {
+    el('searchResults').innerHTML = found.map(searchCard).join('') || empty('Ninguém encontrado', 'Confira o nome de usuário, nome de exibição ou código.');
+  }
   function render() {
     const query = el('filterFriends').value.trim().toLocaleLowerCase('pt-BR');
-    const list = friends.filter(f => name(f).toLocaleLowerCase('pt-BR').includes(query) || f.accountCode.includes(query));
+    const list = friends.filter(person => [name(person), person.username, person.accountCode].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)));
     el('friendCount').textContent = friends.length;
-    friendsBox.innerHTML = list.map(f=>card(f)).join('') || `<div class="hub-empty"><h3>${friends.length ? 'Nenhum resultado' : 'As melhores histórias são compartilhadas'}</h3><p>${friends.length ? 'Tente outro nome ou código.' : 'Busque um jogador acima ou envie seu código para seus amigos.'}</p></div>`;
+    el('incomingCount').textContent = incoming.length;
+    el('outgoingCount').textContent = outgoing.length;
+    el('friends').innerHTML = list.map(person => `<article class="panel person-card friend-person">${meta(person)}<div class="person-actions"><span class="friend-badge">Na sua companhia</span><button class="text-button danger-action" type="button" data-remove="${esc(person.id)}" aria-label="Desfazer amizade com ${esc(name(person))}">Desfazer amizade</button></div></article>`).join('') || empty(friends.length ? 'Nenhum amigo neste filtro' : 'As melhores histórias são compartilhadas', friends.length ? 'Tente outro nome ou código.' : 'Envie uma solicitação. Quando ela for aceita, seu amigo aparece aqui.');
+    el('incomingRequests').innerHTML = incoming.map(request => `<article class="panel person-card request-card">${meta(personOf(request))}<div class="person-actions"><button type="button" class="button button-primary" data-accept="${esc(request.id)}">Aceitar</button><button type="button" class="text-button" data-decline="${esc(request.id)}">Recusar</button></div></article>`).join('') || '<p class="request-empty">Nenhuma solicitação esperando sua resposta.</p>';
+    el('outgoingRequests').innerHTML = outgoing.map(request => `<article class="panel person-card request-card">${meta(personOf(request))}<div class="person-actions"><span class="request-badge">Aguardando resposta</span><button type="button" class="text-button" data-cancel="${esc(request.id)}">Cancelar pedido</button></div></article>`).join('') || '<p class="request-empty">Seus convites de amizade enviados aparecem aqui.</p>';
+    if (!el('searchSection').hidden) renderResults();
   }
-  async function load() {
-    try { friends=(await api('/api/friends')).friends; status.textContent=''; render(); }
-    catch(error) { status.textContent=error.message; friendsBox.innerHTML='<button class="button button-secondary" type="button" id="retryFriends">Tentar novamente</button>'; el('retryFriends').onclick=load; }
+  async function load({ quiet = false } = {}) {
+    if (loading) return;
+    loading = true;
+    el('refreshFriends').disabled = true;
+    try {
+      const data = await api('/api/friends');
+      friends = data.friends || []; incoming = data.incomingRequests || []; outgoing = data.outgoingRequests || [];
+      render();
+      if (!quiet) status.textContent = '';
+    } catch (error) { status.textContent = error.message; }
+    finally { loading = false; el('refreshFriends').disabled = false; }
   }
-  function renderResults() { results.innerHTML=found.map(p=>card(p,true)).join('') || '<div class="hub-empty"><h3>Ninguém encontrado</h3><p>Confira o código ou tente outro nome de exibição.</p></div>'; }
-  el('myAccountCode').textContent=user.accountCode;
-  el('copyAccountCode').onclick=async()=>{
-    try { await navigator.clipboard.writeText(user.accountCode); status.textContent='Código copiado. Compartilhe com seus amigos!'; }
-    catch { status.textContent='Seu código: '+user.accountCode+'. Selecione os números para copiar.'; }
+  async function action(event) {
+    const button = event.target.closest('[data-add],[data-accept],[data-decline],[data-cancel],[data-remove]');
+    if (!button || button.disabled) return;
+    const data = button.dataset;
+    const previous = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Aguarde…';
+    try {
+      let message;
+      if (data.add) {
+        await api('/api/friends', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountCode: data.add }) });
+        message = 'Solicitação enviada. A amizade começa quando a outra pessoa aceitar.';
+      } else if (data.remove) {
+        await api('/api/friends/' + encodeURIComponent(data.remove), { method: 'DELETE' });
+        found = found.map(person => person.id === data.remove ? { ...person, isFriend: false } : person);
+        message = 'Amizade desfeita.';
+      } else {
+        const id = data.accept || data.decline || data.cancel;
+        const suffix = data.accept ? '/accept' : data.decline ? '/decline' : '';
+        await api('/api/friend-requests/' + encodeURIComponent(id) + suffix, { method: data.cancel ? 'DELETE' : 'POST' });
+        message = data.accept ? 'Solicitação aceita. Vocês agora são amigos!' : data.decline ? 'Solicitação recusada.' : 'Solicitação cancelada.';
+      }
+      await load({ quiet: true });
+      status.textContent = message;
+    } catch (error) { status.textContent = error.message; }
+    finally { button.disabled = false; button.textContent = previous; }
+  }
+  for (const id of ['friends', 'incomingRequests', 'outgoingRequests', 'searchResults']) el(id).onclick = action;
+  el('myAccountCode').textContent = user.accountCode;
+  el('myUsername').textContent = user.username ? '@' + user.username : 'Sua identidade no Grimório';
+  el('copyAccountCode').onclick = async () => {
+    try { await navigator.clipboard.writeText(user.accountCode); status.textContent = 'Código copiado. Compartilhe com seus amigos!'; }
+    catch { status.textContent = 'Seu código: ' + user.accountCode + '. Selecione os números para copiar.'; }
   };
-  el('filterFriends').addEventListener('input',render);
-  el('clearSearch').onclick=()=>{searchVersion++;el('searchSection').hidden=true;el('friendQuery').value='';el('searchStatus').textContent='';el('friendSearchForm').querySelector('button').disabled=false;};
-  el('friendSearchForm').onsubmit=async event=>{
-    event.preventDefault(); const q=el('friendQuery').value.trim(); if(q.length<2)return;
-    const version=++searchVersion, button=event.currentTarget.querySelector('button');button.disabled=true;el('searchStatus').textContent='Buscando jogadores…';
-    try { const data=await api('/api/users/search?q='+encodeURIComponent(q)); if(version!==searchVersion)return; found=data.users;renderResults();el('searchSection').hidden=false;el('searchStatus').textContent=found.length+' resultado(s). Confira o código para identificar a conta.'; }
-    catch(error){if(version===searchVersion)el('searchStatus').textContent=error.message;}
-    finally{if(version===searchVersion)button.disabled=false;}
-  };
-  results.onclick=async event=>{
-    const button=event.target.closest('[data-add]');if(!button)return;button.disabled=true;button.textContent='Adicionando…';
-    try { const {friend}=await api('/api/friends',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accountCode:button.dataset.add})});if(!friends.some(f=>f.id===friend.id))friends.push(friend);status.textContent=name(friend)+' adicionado à sua companhia.';render();renderResults(); }
-    catch(error){el('searchStatus').textContent=error.message;button.disabled=false;button.textContent='Adicionar';}
+  el('filterFriends').addEventListener('input', render);
+  el('refreshFriends').onclick = () => load();
+  el('clearSearch').onclick = () => { searchVersion++; el('searchSection').hidden = true; el('friendQuery').value = ''; el('searchStatus').textContent = ''; el('friendSearchForm').querySelector('button').disabled = false; };
+  el('friendSearchForm').onsubmit = async event => {
+    event.preventDefault();
+    const q = el('friendQuery').value.trim();
+    if (q.length < 2) return;
+    const version = ++searchVersion, button = event.currentTarget.querySelector('button');
+    button.disabled = true; el('searchStatus').textContent = 'Buscando jogadores…';
+    try {
+      const data = await api('/api/users/search?q=' + encodeURIComponent(q));
+      if (version !== searchVersion) return;
+      found = data.users || []; renderResults(); el('searchSection').hidden = false;
+      el('searchStatus').textContent = found.length + ' resultado(s). Confira o código antes de enviar a solicitação.';
+    } catch (error) { if (version === searchVersion) el('searchStatus').textContent = error.message; }
+    finally { if (version === searchVersion) button.disabled = false; }
   };
   await load();
+  const timer = setInterval(() => { if (!document.hidden) load({ quiet: true }); }, 10000);
+  window.addEventListener('focus', () => load({ quiet: true }));
+  window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
 })();

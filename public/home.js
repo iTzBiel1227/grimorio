@@ -1,5 +1,16 @@
 ﻿(async () => {
   const { api } = Grimorio;
+  try {
+    const content = await api('/api/site-content');
+    for (const [key, id] of Object.entries({ heroTitle: 'homeTitle', heroBody: 'homeIntro', aboutTitle: 'aboutTitle', aboutBody: 'aboutBody', supportText: 'supportText' })) {
+      if (content[key]) document.getElementById(id).textContent = content[key];
+    }
+    if (content.supportUrl && /^https:\/\//i.test(content.supportUrl)) {
+      const support = document.getElementById('supportLink');
+      support.href = content.supportUrl; support.hidden = false;
+      document.getElementById('supportPending').hidden = true;
+    }
+  } catch { /* Built-in project text remains available offline. */ }
   const image = document.querySelector('#featuredBookImage');
   const link = document.querySelector('#featuredBookLink');
   const artLink = document.querySelector('#featureArtLink');
