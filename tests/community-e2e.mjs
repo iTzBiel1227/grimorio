@@ -26,7 +26,15 @@ try{
  const code=new URL(a.url()).searchParams.get('code');await expect(a.locator('#onlineCount')).toHaveText('1');
  await a.goto(origin+'/campanha.html');await a.locator('.campaign-people-button').click();await a.locator('[data-invite-user]').click();await expect(a.locator('#campaignInviteStatus')).toContainText('Convite enviado');
  assert.equal((await api('/api/campaigns/'+code+'/members',outsider.token)).status,403);
- await b.goto(origin+'/campanha.html');await b.locator('[data-accept-invite]').click();await expect(b.locator('#campaigns')).toContainText('A Torre das Cinzas');
+ await api('/api/campaigns',player.token,{name:'Arquivo pessoal'});
+ await b.goto(origin+'/campanha.html');await expect(b.locator('[data-accept-invite]')).toBeVisible();
+ await b.locator('#campaignSearch').fill('sem correspondência');await expect(b.locator('#campaigns')).toContainText('Nenhum mundo encontrado');
+ await b.locator('#campaignSearch').fill('');await b.locator('#refreshCampaigns').click();await expect(b.locator('#refreshCampaigns')).toBeEnabled();
+ await expect(b.locator('#campaignStatus')).toHaveText('');await expect(b.locator('#campaignInvites .campaign-people-button')).toHaveCount(0);
+ await expect(b.locator('#campaigns .campaign-people-button')).toHaveCount(1);await b.locator('#campaigns .campaign-people-button').click();
+ await expect(b.locator('#campaignPeopleTitle')).toHaveText('Arquivo pessoal');await b.locator('.campaign-people-dialog .modal-close').click();
+ await b.locator('[data-accept-invite]').click();await expect(b.locator('#campaigns')).toContainText('A Torre das Cinzas');
+ await expect(b.locator('#campaignInviteInbox')).toBeHidden();await expect(b.locator('#campaigns .campaign-people-button')).toHaveCount(2);
  await a.goto(origin+'/lobby.html?code='+code);await b.goto(origin+'/lobby.html?code='+code);await expect(a.locator('#onlineCount')).toHaveText('2');await expect(b.locator('#onlineCount')).toHaveText('2');
  await b.goto(origin+'/ficha.html');await b.waitForSelector('[data-new-folder]');b.once('dialog',dialog=>dialog.accept('A Torre'));await b.locator('[data-new-folder]').click();await b.locator('.folder-card').filter({hasText:'A Torre'}).click();b.once('dialog',dialog=>dialog.accept('Heróis'));await b.locator('[data-new-folder]').click();await b.locator('.folder-card').filter({hasText:'Heróis'}).click();await b.locator('#newSheet').click();await b.locator('#charName').fill('Aria');await b.locator('#saveSheet').click();await expect(b.locator('#saveStatus')).toHaveText('Ficha salva');
  const playerSheet=(await api('/api/sheets',player.token)).data.sheets[0];assert.ok(playerSheet.folderId);const folders=(await api('/api/sheet-folders',player.token)).data.folders;assert.equal(folders.length,2);const parent=folders.find(row=>!row.parentId),sub=folders.find(row=>row.parentId);assert.equal((await api('/api/sheet-folders/'+parent.id,player.token,{parentId:sub.id},'PUT')).status,400);

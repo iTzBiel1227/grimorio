@@ -13,11 +13,11 @@
     const query=el('campaignSearch').value.trim().toLocaleLowerCase('pt-BR');
     const list=campaigns.filter(c=>(role==='all'||c.role===role)&&(c.name.toLocaleLowerCase('pt-BR').includes(query)||c.code.toLowerCase().includes(query)));
     el('campaigns').innerHTML=list.map(c=>`<article class="panel world-card"><div class="world-card-top"><span class="mini-label">${c.role==='master'?'MESTRE':'JOGADOR'}</span><span class="world-status ${c.status==='session'?'live':''}">${c.status==='session'?'Sessão iniciada':'No lobby'}</span></div><h3>${esc(c.name)}</h3><div class="world-code">CONVITE · ${esc(c.code)}</div><div class="campaign-actions"><a class="button button-primary" href="/${c.status==='session'?'sessao':'lobby'}.html?code=${encodeURIComponent(c.code)}">${c.status==='session'?'Abrir sessão':'Abrir lobby'} ↗</a><button type="button" class="button button-secondary invite" data-code="${esc(c.code)}">Copiar convite</button></div></article>`).join('') || `<div class="hub-empty"><h3>${campaigns.length?'Nenhum mundo encontrado':'Seu próximo mundo começa aqui'}</h3><p>${campaigns.length?'Experimente outro filtro ou nome.':'Crie uma campanha ou entre com o convite do seu grupo.'}</p></div>`;
-    document.querySelectorAll('.invite').forEach(button=>button.onclick=async()=>{
+    el('campaigns').querySelectorAll('.invite').forEach(button=>button.onclick=async()=>{
       try{await navigator.clipboard.writeText(`${location.origin}/lobby.html?code=${button.dataset.code}`);say('campaignStatus','Convite copiado. Compartilhe com seu grupo.');}
       catch{say('campaignStatus','Código do convite: '+button.dataset.code);}
     });
-    document.querySelectorAll('.world-card').forEach((card,index)=>{
+    el('campaigns').querySelectorAll('.world-card').forEach((card,index)=>{
       const campaign=list[index];
       const button=document.createElement('button');button.type='button';button.className='button button-secondary campaign-people-button';button.textContent=campaign.role==='master'?'Participantes e convites':'Ver participantes';
       button.onclick=()=>window.GrimorioCampaignPeople.open({code:campaign.code,name:campaign.name,canInvite:campaign.role==='master'});

@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../public/campaigns.js', import.meta.url), 
 function harness(value, campaigns = []) {
   const nodes = new Map();
   for (const id of ['create','join','campaignName','code','player','campaigns','campaignTotal','campaignMasterTotal','campaignPlayerTotal','campaignSearch','refreshCampaigns','campaignStatus','createError','joinError','campaignInvites','campaignInviteInbox','campaignInviteCount','campaignInviteFeedback']) {
-    nodes.set('#' + id, { value: '', classList: {toggle(){}}, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, setCustomValidity(message) { this.validation = message; }, reportValidity() { return !nodes.get('#campaignName').validation; }, querySelector() { return this.button ||= {}; } });
+    nodes.set('#' + id, { value: '', classList: {toggle(){}}, listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, setCustomValidity(message) { this.validation = message; }, reportValidity() { return !nodes.get('#campaignName').validation; }, querySelector() { return this.button ||= {}; }, querySelectorAll() { return []; } });
   }
   nodes.get('#campaignName').value = value;
   const calls = [];

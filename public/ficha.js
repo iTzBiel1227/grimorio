@@ -66,8 +66,11 @@ function connectRollCampaign(code){
   rollCampaignCode=code||''; const state=$('#liveRollState');
   if(!code){sheetSocket.emit('room:leave');state.textContent='offline';state.classList.remove('live');return}
   const opt=[...$('#rollCampaign').options].find(o=>o.value===code); const player=opt?.dataset.player||currentUser?.displayName||'Aventureiro';
-  sheetSocket.emit('room:join',{code,playerName:player,token:localStorage.getItem('grimorio_auth_token')}); state.textContent='conectando…';
+  state.textContent='conectando…';state.classList.remove('live');
+  if(window.GrimorioSupabase||sheetSocket.connected)sheetSocket.emit('room:join',{code,playerName:player,token:localStorage.getItem('grimorio_auth_token')});
 }
+sheetSocket.on('connect',()=>{if(rollCampaignCode)connectRollCampaign(rollCampaignCode)});
+sheetSocket.on('disconnect',()=>{if(rollCampaignCode){$('#liveRollState').textContent='reconectando…';$('#liveRollState').classList.remove('live')}});
 function rollFromSheet(label,modifier,type){
   const value=1+Math.floor(Math.random()*20), total=value+modifier;
   if(rollCampaignCode){sheetSocket.emit('dice:roll',{sides:20,modifier,label,characterName:data?.name||'Personagem'});toast(`${label}: enviando rolagem para a mesa…`)}

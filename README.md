@@ -4,6 +4,8 @@ Plataforma de RPG criada por amigos para reunir personagens, campanhas, livros e
 
 A publicação usa Supabase Auth, PostgreSQL, Storage e Realtime. O modo local usa Node.js, Express, SQLite e Socket.IO. A interface é formada por páginas HTML e JavaScript em `public/`; não usa React, Vite ou React Router.
 
+A [conferência dos 14 pedidos da atualização](docs/pedidos-da-atualizacao.md) registra onde usar cada recurso e as decisões posteriores sobre cadastro e D20.
+
 ## Executar localmente
 
 Use Node.js 22 ou superior:

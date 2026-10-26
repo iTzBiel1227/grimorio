@@ -43,7 +43,12 @@
     row.innerHTML = `<small>${esc(message.sender)}${message.private ? ' · privado' : ''}</small><div>${esc(message.body)}</div>`;
     $('#chatLog').append(row); $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
   });
-  socket.emit('room:join', { code, token: localStorage.getItem('grimorio_auth_token'), playerName: master ? 'Mestre' : user.displayName });
+  const joinRoom = () => socket.emit('room:join', { code, token: localStorage.getItem('grimorio_auth_token'), playerName: master ? 'Mestre' : user.displayName });
+  socket.on('connect', joinRoom);
+  socket.on('disconnect', () => { $('#tableConnection').textContent = 'RECONECTANDO'; });
+  // Socket.IO discards room membership on disconnect. Its next connection must
+  // rejoin; the Supabase compatibility socket starts its channel on room:join.
+  if (window.GrimorioSupabase || socket.connected) joinRoom();
   $('#saveMasterNotes').onclick=()=>socket.emit('master:save-notes',{notes:$('#masterNotes').value});
   $('#masterNotes').addEventListener('input',()=>{notesDirty=true;});
   const loadOlder=document.createElement('button');loadOlder.className='button button-secondary compact';loadOlder.textContent='Carregar rolagens anteriores';loadOlder.hidden=true;$('.table-roll-log').append(loadOlder);let historyCursor=null;
