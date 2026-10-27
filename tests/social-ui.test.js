@@ -13,6 +13,8 @@ class Control {
   setCustomValidity(value) { this.validation = value; }
   reportValidity() { return true; }
   focus() { this.focused = true; }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 }
 const controls = () => { const nodes = new Map(); const el = id => { if (!nodes.has(id)) nodes.set(id, new Control()); return nodes.get(id); }; return { nodes, el }; };
 const escaping = value => String(value || '').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
@@ -71,6 +73,29 @@ test('accepting incoming request and removing friendship refresh both lists', as
   await h.click('friends', { remove: 'target' });
   assert.equal(h.el('friendCount').textContent, 0);
   assert.ok(h.requests.some(request => request.method === 'DELETE' && request.url === '/api/friends/target'));
+});
+
+test('friend requests stay behind the notification icon and keyboard tabs select sent requests', async () => {
+  const h = await friendHarness();
+  assert.equal(h.el('requestsBadge').hidden, true);
+  h.state.incomingRequests.push({ id: 'request-2', person: h.person });
+  await h.el('refreshFriends').onclick();
+  assert.equal(h.el('requestsBadge').hidden, false);
+  assert.equal(h.el('requestsBadge').textContent, 1);
+  assert.match(h.el('openRequests')['aria-label'], /1 recebida/);
+  h.el('openRequests').onclick();
+  assert.equal(h.el('requestsDialog').open, true);
+  assert.equal(h.el('incomingPanel').hidden, false);
+  assert.equal(h.el('outgoingPanel').hidden, true);
+  h.el('incomingTab').events.keydown({ key: 'ArrowRight', preventDefault() {} });
+  assert.equal(h.el('outgoingPanel').hidden, false);
+  assert.equal(h.el('outgoingTab')['aria-selected'], 'true');
+  assert.equal(h.el('outgoingTab').focused, true);
+  h.el('closeRequests').onclick();
+  assert.equal(h.el('requestsDialog').open, false);
+  h.el('openAddFriend').onclick();
+  assert.equal(h.el('addFriendDialog').open, true);
+  assert.equal(h.el('friendQuery').focused, true);
 });
 
 async function registrationHarness(result) {

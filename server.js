@@ -86,6 +86,8 @@ db.exec(`
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
 if (!userColumns.includes("display_name")) db.exec("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
 if (!userColumns.includes("avatar_data")) db.exec("ALTER TABLE users ADD COLUMN avatar_data TEXT NOT NULL DEFAULT ''");
+if (!userColumns.includes("banner_data")) db.exec("ALTER TABLE users ADD COLUMN banner_data TEXT NOT NULL DEFAULT ''");
+if (!userColumns.includes("bio")) db.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
 if (!userColumns.includes("role")) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
 if (!userColumns.includes("account_code")) db.exec("ALTER TABLE users ADD COLUMN account_code TEXT");
 if (!userColumns.includes("username")) db.exec("ALTER TABLE users ADD COLUMN username TEXT");
@@ -134,6 +136,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS campaign_rolls_history ON campaign_rolls(campaign_id,created_at DESC);
 `);
 const sheetColumns = db.prepare('PRAGMA table_info(character_sheets)').all().map(c => c.name);
+const entryColumns = db.prepare('PRAGMA table_info(grimoire_entries)').all().map(c => c.name);
+if (!entryColumns.includes('image_data')) db.exec("ALTER TABLE grimoire_entries ADD COLUMN image_data TEXT NOT NULL DEFAULT ''");
 if (!sheetColumns.includes('folder_id')) db.exec('ALTER TABLE character_sheets ADD COLUMN folder_id TEXT REFERENCES sheet_folders(id) ON DELETE SET NULL');
 if (!sheetColumns.includes('version')) db.exec('ALTER TABLE character_sheets ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
 db.function('fold_name', value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
@@ -155,8 +159,8 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const createUser = db.prepare("INSERT INTO users (id, email, password_hash, created_at, account_code) VALUES (?, ?, ?, ?, ?)");
 const findUserByEmail = db.prepare("SELECT * FROM users WHERE email = ?");
-const findUserById = db.prepare("SELECT id, email, username, display_name AS displayName, avatar_data AS avatarData, account_code AS accountCode, role, created_at AS createdAt FROM users WHERE id = ?");
-const updateUserProfile = db.prepare("UPDATE users SET display_name = ?, avatar_data = ? WHERE id = ?");
+const findUserById = db.prepare("SELECT id, email, username, display_name AS displayName, avatar_data AS avatarData, banner_data AS bannerData, bio, account_code AS accountCode, role, created_at AS createdAt FROM users WHERE id = ?");
+const updateUserProfile = db.prepare("UPDATE users SET display_name = ?, avatar_data = ?, banner_data = ?, bio = ? WHERE id = ?");
 const createSession = db.prepare("INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)");
 const findSession = db.prepare(`SELECT s.*, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?`);
 const deleteSession = db.prepare("DELETE FROM sessions WHERE token_hash = ?");
@@ -293,10 +297,12 @@ app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: findUserById
 app.post("/api/auth/logout", requireAuth, (req, res) => { deleteSession.run(tokenHash(req.auth.token)); res.status(204).end(); });
 
 app.put("/api/profile", requireAuth, (req, res) => {
-  const displayName = String(req.body?.displayName || "").trim().slice(0, 32);
-  const avatarData = String(req.body?.avatarData || "");
-  if (!validImageUpload(avatarData)) return res.status(400).json({ error: "Envie uma imagem PNG, JPG ou WEBP válida de até 3 MB." });
-  updateUserProfile.run(displayName, avatarData, req.auth.userId);
+  const old = findUserById.get(req.auth.userId), body = req.body || {};
+  const displayName = String(body.displayName ?? old.displayName).trim();
+  const avatarData = String(body.avatarData ?? old.avatarData), bannerData = String(body.bannerData ?? old.bannerData), bio = String(body.bio ?? old.bio).trim();
+  if (!displayName || displayName.length > 32 || bio.length > 280) return res.status(400).json({error:'Use um nome de até 32 caracteres e uma bio de até 280 caracteres.'});
+  if (!validImageUpload(avatarData) || !validImageUpload(bannerData)) return res.status(400).json({ error: "Envie uma imagem PNG, JPG ou WEBP válida de até 3 MB." });
+  updateUserProfile.run(displayName, avatarData, bannerData, bio, req.auth.userId);
   res.json({ user: findUserById.get(req.auth.userId) });
 });
 
@@ -462,10 +468,58 @@ app.post('/api/campaign-invites/:id/:action',requireAuth,(req,res)=>{
   io.to(campaign.code).emit('sheet:list-changed');io.to(campaign.code).emit('campaign:members-changed');res.json({ok:true,campaign:publicCampaign(campaign)});
 });
 
-app.get("/api/grimoire", requireAuth,(req,res)=>res.json({entries:listEntries.all(req.auth.userId).map(r=>({id:r.id,kind:r.kind,name:r.name,description:r.description,damage:r.damage,isStandard:!!r.is_standard}))}));
-app.post("/api/grimoire", requireAuth,(req,res)=>{const kind=['spell','ability'].includes(req.body?.kind)?req.body.kind:'spell';const id=randomUUID(),now=new Date().toISOString();db.prepare("INSERT INTO grimoire_entries(id,owner_user_id,kind,name,description,damage,is_standard,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(id,req.auth.userId,kind,String(req.body?.name||'Sem nome').slice(0,80),String(req.body?.description||'').slice(0,5000),String(req.body?.damage||'').slice(0,120),0,now,now);res.status(201).json({id});});
-app.put("/api/grimoire/:id", requireAuth,(req,res)=>{const e=getEntry.get(req.params.id);if(!e||e.owner_user_id!==req.auth.userId)return res.status(403).json({error:"Sem permissão."});db.prepare("UPDATE grimoire_entries SET name=?,description=?,damage=?,updated_at=? WHERE id=?").run(String(req.body?.name||e.name).slice(0,80),String(req.body?.description||e.description).slice(0,5000),String(req.body?.damage||e.damage).slice(0,120),new Date().toISOString(),e.id);res.json({ok:true});});
-app.delete("/api/grimoire/:id", requireAuth,(req,res)=>{const e=getEntry.get(req.params.id);if(!e||e.owner_user_id!==req.auth.userId)return res.status(403).json({error:"Sem permissão."});db.prepare("DELETE FROM grimoire_entries WHERE id=?").run(e.id);res.status(204).end();});
+function entryResponse(row) {
+  return { id:row.id, kind:row.kind, name:row.name, description:row.description,
+    damage:row.damage, imageData:row.image_data || '', isStandard:!!row.is_standard };
+}
+function entryValues(body = {}, previous = {}) {
+  const values = { kind:body.kind ?? previous.kind ?? 'spell',
+    name:String(body.name ?? previous.name ?? '').trim(),
+    description:String(body.description ?? previous.description ?? '').trim(),
+    damage:String(body.damage ?? previous.damage ?? '').trim(),
+    imageData:String(body.imageData ?? previous.image_data ?? '') };
+  if (!['spell','ability'].includes(values.kind) || !values.name || values.name.length > 80 || values.description.length > 5000 || values.damage.length > 120)
+    throw new Error('Informe o tipo e nome (até 80 caracteres), descrição (até 5.000) e dano (até 120).');
+  if (!validImageUpload(values.imageData)) throw new Error('Envie uma imagem PNG, JPG ou WebP de até 3 MB.');
+  return values;
+}
+function createEntry(isPublic) {
+  return (req,res) => {
+    let values;
+    try { values=entryValues(req.body); } catch(error) { return res.status(400).json({error:error.message}); }
+    const id=randomUUID(), now=new Date().toISOString();
+    db.prepare('INSERT INTO grimoire_entries(id,owner_user_id,kind,name,description,damage,image_data,is_standard,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+      .run(id,req.auth.userId,values.kind,values.name,values.description,values.damage,values.imageData,isPublic?1:0,now,now);
+    res.status(201).json({id});
+  };
+}
+function changeEntry(isPublic) {
+  return (req,res) => {
+    const entry=getEntry.get(req.params.id);
+    if(!entry || !!entry.is_standard!==isPublic || (!isPublic && entry.owner_user_id!==req.auth.userId))
+      return res.status(404).json({error:'Magia ou habilidade não encontrada.'});
+    if(req.method==='DELETE') { db.prepare('DELETE FROM grimoire_entries WHERE id=?').run(entry.id); return res.status(204).end(); }
+    let values;
+    try { values=entryValues(req.body,entry); } catch(error) { return res.status(400).json({error:error.message}); }
+    db.prepare('UPDATE grimoire_entries SET kind=?,name=?,description=?,damage=?,image_data=?,updated_at=? WHERE id=?')
+      .run(values.kind,values.name,values.description,values.damage,values.imageData,new Date().toISOString(),entry.id);
+    res.json({ok:true});
+  };
+}
+app.get('/api/grimoire',(req,res)=>{
+  if(req.query.scope==='public') return res.json({entries:db.prepare('SELECT * FROM grimoire_entries WHERE is_standard=1 ORDER BY kind,name').all().map(entryResponse)});
+  const auth=getAuth(req);
+  if(!auth) return res.status(401).json({error:'Faça login para continuar.'});
+  const rows=req.query.scope==='mine' ? db.prepare('SELECT * FROM grimoire_entries WHERE owner_user_id=? AND is_standard=0 ORDER BY kind,name').all(auth.userId) : listEntries.all(auth.userId);
+  res.json({entries:rows.map(entryResponse)});
+});
+app.post('/api/grimoire',requireAuth,createEntry(false));
+app.put('/api/grimoire/:id',requireAuth,changeEntry(false));
+app.delete('/api/grimoire/:id',requireAuth,changeEntry(false));
+app.get('/api/admin/grimoire',requireAuth,requireContentAdmin,(req,res)=>res.json({entries:db.prepare('SELECT * FROM grimoire_entries WHERE is_standard=1 ORDER BY kind,name').all().map(entryResponse)}));
+app.post('/api/admin/grimoire',requireAuth,requireContentAdmin,createEntry(true));
+app.put('/api/admin/grimoire/:id',requireAuth,requireContentAdmin,changeEntry(true));
+app.delete('/api/admin/grimoire/:id',requireAuth,requireContentAdmin,changeEntry(true));
 
 ﻿function requireContentAdmin(req, res, next) {
   if (findUserById.get(req.auth.userId)?.role !== 'admin') return res.status(403).json({error:'Somente administradores podem alterar o catálogo e o anúncio.'});

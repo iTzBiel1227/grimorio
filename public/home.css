@@ -19,3 +19,27 @@
 @media(max-width:680px){.home-hero{grid-template-columns:1fr;gap:0;padding:45px 0 30px}.home-hero h1{font-size:44px}.home-hero-art{min-height:245px;margin-top:10px}.hero-orbit{width:210px}.hero-art-caption{bottom:0}.hero-coordinate{right:12%}.hero-d20{width:120px;font-size:42px}.home-principles{gap:14px;font-size:10px}.home-tools{grid-template-columns:1fr}.home-tools>a+ a{border-left:0;border-top:1px solid #ffffff0d}.home-tool-icon{display:block}.home-tools>a{padding:22px 8px}.home-about{grid-template-columns:1fr;gap:12px;padding:55px 4px}.home-support{margin-top:40px;padding:25px;gap:15px}.support-sigil{font-size:30px}.home-support h2{font-size:25px}.home-footer{flex-wrap:wrap;gap:14px}.home-footer p{width:100%;order:2}.home-footer>a:last-child{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.hero-d20,.home-tools>a{transition:none}.home-hero-art:hover .hero-d20{transform:rotate(-12deg)}}
 .home-hero-art{overflow:hidden}
+.home-document{scroll-behavior:smooth;scroll-padding-top:44px}
+.home-depth{position:fixed;inset:0 0 0 var(--side);z-index:0;pointer-events:none;overflow:hidden;background:radial-gradient(ellipse at 80% 38%,#a8293520,transparent 58%)}
+.home-depth canvas{display:block;width:100%;height:100%;opacity:0;transition:opacity 1.1s ease;mask-image:linear-gradient(90deg,transparent 2%,#0009 40%,#000 72%);-webkit-mask-image:linear-gradient(90deg,transparent 2%,#0009 40%,#000 72%)}
+.home-3d-ready .home-depth canvas{opacity:.52}
+.home-shell{position:relative;z-index:1}
+.home-hero{position:relative;min-height:min(760px,calc(100svh - 64px));padding-bottom:110px}
+.home-hero-copy{position:relative;z-index:1;text-shadow:0 2px 24px #08080a}
+.home-hero-art{background:none;min-height:460px;pointer-events:none}
+.home-3d-ready .hero-d20{visibility:hidden}
+.hero-orbit{opacity:.6;width:min(95%,440px)}
+.hero-art-caption{bottom:12px;color:#b39890;text-shadow:0 2px 14px #000}
+.home-scroll-cue{position:absolute;bottom:34px;left:0;display:inline-flex;align-items:center;gap:14px;min-height:40px;font-size:9px;letter-spacing:.2em;color:#b49a8d;transition:color .2s}
+.home-scroll-cue:hover,.home-scroll-cue:focus-visible{color:#f7d8ba}.home-scroll-cue>span:last-child{font-size:17px}
+.scroll-cue-line{position:relative;display:block;width:21px;height:34px;border:1px solid #b49a8d66;border-radius:12px;overflow:hidden}
+.scroll-cue-line i{display:block;position:absolute;top:7px;left:9px;width:1px;height:7px;background:#efb99c;animation:home-scroll-pulse 2.4s cubic-bezier(.2,.65,.3,1) infinite}
+.home-tools{background:#0d0c10b8;backdrop-filter:blur(10px)}
+.home-about{position:relative;background:linear-gradient(90deg,#0c0b0eaa,#0c0b0e44);padding-inline:22px}
+.home-support{background:radial-gradient(ellipse at 0 0,#78583929,transparent 75%),#0d0c10c9;backdrop-filter:blur(10px)}
+.home-motion-ready [data-scroll-reveal]{transition:opacity .85s ease,transform .85s cubic-bezier(.2,.65,.3,1)}
+.home-motion-ready [data-scroll-reveal]:not(.is-revealed){opacity:0;transform:translateY(32px)}
+@keyframes home-scroll-pulse{0%,100%{transform:translateY(0);opacity:.3}45%{opacity:1}70%{transform:translateY(10px);opacity:0}}
+@media(max-width:900px){.home-depth{left:64px}.home-hero{min-height:650px}.home-hero-art{min-height:390px}.home-3d-ready .home-depth canvas{opacity:.38}}
+@media(max-width:680px){.home-hero{min-height:0;padding-top:50px;padding-bottom:85px}.home-hero-art{min-height:260px}.home-hero-copy>p{font-size:14px}.home-depth canvas{mask-image:linear-gradient(180deg,#0005,#000 55%,#0008);-webkit-mask-image:linear-gradient(180deg,#0005,#000 55%,#0008)}.home-3d-ready .home-depth canvas{opacity:.25}.home-scroll-cue{bottom:24px;gap:11px;font-size:8px}.home-about{padding-inline:12px}.hero-art-caption{bottom:10px}.home-tools{backdrop-filter:none}.home-support{backdrop-filter:none}}
+@media(prefers-reduced-motion:reduce){.home-document{scroll-behavior:auto}.home-depth canvas,.home-motion-ready [data-scroll-reveal],.home-scroll-cue{transition:none}.home-motion-ready [data-scroll-reveal]:not(.is-revealed){opacity:1;transform:none}.scroll-cue-line i{animation:none}.home-hero-art:hover .hero-d20{transform:rotate(-12deg)}}

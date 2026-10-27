@@ -69,18 +69,23 @@
     profileDialog.setAttribute('aria-labelledby', 'accountProfileTitle');
     profileDialog.innerHTML = `<button type="button" class="modal-close" data-profile-close aria-label="Fechar perfil">×</button>
       <span class="mini-label">SEU LUGAR NO GRIMÓRIO</span><h2 id="accountProfileTitle">Editar perfil</h2>
-      <p class="account-intro">Sua identidade na comunidade. Dê um rosto ao próximo capítulo.</p>
+      <p class="account-intro">Um espaço com a sua personalidade, dentro e fora da aventura.</p>
       <form id="accountProfileForm">
-        <div class="account-portrait"><div id="accountAvatarPreview" aria-label="Prévia da foto de perfil"></div>
-        <div class="account-portrait-actions"><label for="accountAvatarInput">Foto de perfil</label>
+        <div class="account-customization"><aside class="account-preview-column"><span class="account-section-label">PRÉVIA DO PERFIL</span><div class="account-preview-card">
+          <div id="accountBannerPreview" class="account-banner-preview" aria-label="Prévia do banner"><span aria-hidden="true">✦</span></div>
+          <div class="account-preview-content"><div class="account-avatar-frame" data-frame=""><div id="accountAvatarPreview" aria-label="Prévia da foto de perfil"></div></div><strong id="accountPreviewName"></strong><span id="accountPreviewUsername"></span><div class="account-preview-about"><span class="account-section-label">SOBRE MIM</span><p id="accountPreviewBio"></p></div></div>
+        </div><p class="account-preview-hint">Seu nome de exibição e sua apresentação podem mudar. Sua identidade continua sendo única.</p></aside>
+        <div class="account-profile-fields"><div class="account-image-fields"><div class="account-portrait-actions"><label for="accountAvatarInput">Foto de perfil</label>
         <input id="accountAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="accountAvatarHint">
         <small id="accountAvatarHint">PNG, JPG ou WEBP · até 3 MB</small>
-        <button class="account-remove-photo" type="button" id="accountRemoveAvatar">Remover foto</button></div></div>
-        <div class="account-identity"><span class="mini-label">SEU NOME DE USUÁRIO</span><strong id="accountUsername"></strong><small>Único no Grimório. Seu nome de exibição pode ser diferente.</small></div>
+        <button class="account-remove-photo" type="button" id="accountRemoveAvatar">Remover foto</button></div><div class="account-portrait-actions"><label for="accountBannerInput">Banner do perfil</label><input id="accountBannerInput" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="accountBannerHint"><small id="accountBannerHint">PNG, JPG ou WEBP · até 3 MB. Prefira uma imagem horizontal.</small><button class="account-remove-photo" type="button" id="accountRemoveBanner">Remover banner</button></div></div>
         <label for="accountDisplayName">Nome de exibição</label>
         <input id="accountDisplayName" type="text" maxlength="32" autocomplete="nickname" required placeholder="Como devemos chamar você?">
+        <div class="account-bio-label"><label for="accountBio">Sobre mim</label><span id="accountBioCount">0 / 280</span></div><textarea id="accountBio" maxlength="280" rows="3" placeholder="Conte um pouco sobre você ou deixe sua frase favorita." aria-describedby="accountBioCount"></textarea>
+        <div class="account-identity"><span class="mini-label">SEU NOME DE USUÁRIO</span><strong id="accountUsername"></strong><small>Este nome é único no Grimório e não pode ser alterado.</small></div>
         <div class="account-email"><span>E-mail da conta</span><strong id="accountProfileEmail"></strong></div>
         <div class="account-code-block"><div><span class="mini-label">CÓDIGO DA CONTA</span><strong id="accountCode"></strong></div><button type="button" class="button button-secondary" id="accountCopyCode" aria-label="Copiar código da conta">Copiar código</button></div><small id="accountCodeHint">Compartilhe estes 8 números para receber solicitações de amizade.</small>
+        </div></div>
         <p class="auth-error" role="alert" id="accountProfileError"></p>
         <div class="account-editor-actions"><button type="button" class="button button-secondary" data-profile-cancel>Cancelar</button>
         <button type="submit" class="button button-primary" id="accountSaveProfile">Salvar alterações</button></div>
@@ -97,12 +102,17 @@
     const photoInput = profileDialog.querySelector('#accountAvatarInput');
     const photoPreview = profileDialog.querySelector('#accountAvatarPreview');
     const removePhoto = profileDialog.querySelector('#accountRemoveAvatar');
+    const bannerInput = profileDialog.querySelector('#accountBannerInput');
+    const bannerPreview = profileDialog.querySelector('#accountBannerPreview');
+    const removeBanner = profileDialog.querySelector('#accountRemoveBanner');
+    const bioInput = profileDialog.querySelector('#accountBio');
     const saveProfile = profileDialog.querySelector('#accountSaveProfile');
     const profileError = profileDialog.querySelector('#accountProfileError');
     let user = null;
     let pendingAvatar = '';
-    let photoRevision = 0;
-    let readingPhoto = false;
+    let pendingBanner = '';
+    const imageRevision = { avatar: 0, banner: 0 };
+    const readingImages = { avatar: false, banner: false };
     let savingProfile = false;
     function renderAccount() {
       login.hidden = Boolean(user);
@@ -118,7 +128,14 @@
     function renderPhoto() {
       photoPreview.innerHTML = avatar({ ...user, displayName: nameInput.value.trim(), avatarData: pendingAvatar });
       removePhoto.hidden = !pendingAvatar;
+      removeBanner.hidden = !pendingBanner;
+      bannerPreview.innerHTML = pendingBanner ? `<img src="${esc(pendingBanner)}" alt="">` : '<span aria-hidden="true">✦</span>';
+      profileDialog.querySelector('#accountPreviewName').textContent = nameInput.value.trim() || 'Seu nome de exibição';
+      profileDialog.querySelector('#accountPreviewUsername').textContent = '@' + (user?.username || user?.accountCode || 'aventureiro');
+      profileDialog.querySelector('#accountPreviewBio').textContent = bioInput.value.trim() || 'Uma nova história está prestes a começar.';
+      profileDialog.querySelector('#accountBioCount').textContent = `${bioInput.value.length} / 280`;
     }
+    function syncSaveState() { saveProfile.disabled = savingProfile || readingImages.avatar || readingImages.banner; }
     function closeProfile() { if (!savingProfile) profileDialog.close(); }
     function closeOnBackdrop(dialog, close) {
       dialog.addEventListener('click', event => {
@@ -134,17 +151,20 @@
     profileDialog.querySelector('[data-profile-close]').onclick = closeProfile;
     profileDialog.querySelector('[data-profile-cancel]').onclick = closeProfile;
     profileDialog.addEventListener('cancel', event => { if (savingProfile) event.preventDefault(); });
-    profileDialog.addEventListener('close', () => { photoRevision++; readingPhoto = false; });
+    profileDialog.addEventListener('close', () => { for (const kind of ['avatar', 'banner']) { imageRevision[kind]++; readingImages[kind] = false; } });
     profileButton.onclick = () => {
       if (!user) return;
       pendingAvatar = user.avatarData || '';
+      pendingBanner = user.bannerData || '';
       nameInput.value = user.displayName || '';
+      bioInput.value = user.bio || '';
       nameInput.setCustomValidity('');
       profileDialog.querySelector('#accountUsername').textContent = '@' + (user.username || user.accountCode || 'aventureiro');
       profileDialog.querySelector('#accountProfileEmail').textContent = user.email || '';
       profileDialog.querySelector('#accountCode').textContent = user.accountCode || '';
       profileDialog.querySelector('#accountCopyCode').textContent = 'Copiar código';
       photoInput.value = '';
+      bannerInput.value = '';
       profileError.textContent = '';
       status.textContent = '';
       saveProfile.disabled = false;
@@ -159,34 +179,38 @@
       } catch { profileError.textContent = 'Não foi possível copiar. Selecione o código acima para copiá-lo.'; }
     };
     nameInput.oninput = () => { nameInput.setCustomValidity(''); renderPhoto(); };
-    removePhoto.onclick = () => {
-      photoRevision++;
-      pendingAvatar = '';
-      photoInput.value = '';
-      readingPhoto = false;
-      saveProfile.disabled = false;
+    bioInput.oninput = renderPhoto;
+    const removeImage = kind => {
+      imageRevision[kind]++;
+      if (kind === 'avatar') { pendingAvatar = ''; photoInput.value = ''; }
+      else { pendingBanner = ''; bannerInput.value = ''; }
+      readingImages[kind] = false;
+      syncSaveState();
       profileError.textContent = '';
       renderPhoto();
     };
-    photoInput.onchange = async () => {
-      const file = photoInput.files[0];
-      const revision = ++photoRevision;
+    removePhoto.onclick = () => removeImage('avatar');
+    removeBanner.onclick = () => removeImage('banner');
+    const readImage = async kind => {
+      const input = kind === 'avatar' ? photoInput : bannerInput;
+      const file = input.files[0];
+      const revision = ++imageRevision[kind];
       profileError.textContent = '';
-      readingPhoto = false;
-      saveProfile.disabled = false;
+      readingImages[kind] = false;
+      syncSaveState();
       if (!file) return;
       if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
         profileError.textContent = 'Escolha uma imagem PNG, JPG ou WEBP.';
-        photoInput.value = '';
+        input.value = '';
         return;
       }
-      if (file.size > 2_999_000) {
-        profileError.textContent = 'A imagem é muito grande. Escolha uma foto de até 3 MB.';
-        photoInput.value = '';
+      if (file.size > 3 * 1024 * 1024) {
+        profileError.textContent = 'A imagem é muito grande. Escolha uma imagem de até 3 MB.';
+        input.value = '';
         return;
       }
-      readingPhoto = true;
-      saveProfile.disabled = true;
+      readingImages[kind] = true;
+      syncSaveState();
       try {
         const data = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -200,31 +224,35 @@
           image.onerror = () => reject(new Error('Este arquivo não contém uma imagem válida.'));
           image.src = data;
         });
-        if (revision !== photoRevision) return;
-        pendingAvatar = data;
+        if (revision !== imageRevision[kind]) return;
+        if (kind === 'avatar') pendingAvatar = data;
+        else pendingBanner = data;
         renderPhoto();
       } catch (error) {
-        if (revision !== photoRevision) return;
+        if (revision !== imageRevision[kind]) return;
         profileError.textContent = error.message;
-        photoInput.value = '';
+        input.value = '';
       } finally {
-        if (revision === photoRevision) { readingPhoto = false; saveProfile.disabled = false; }
+        if (revision === imageRevision[kind]) { readingImages[kind] = false; syncSaveState(); }
       }
     };
+    photoInput.onchange = () => readImage('avatar');
+    bannerInput.onchange = () => readImage('banner');
     profileForm.onsubmit = async event => {
       event.preventDefault();
-      if (savingProfile || readingPhoto) return;
+      if (savingProfile || readingImages.avatar || readingImages.banner) return;
       nameInput.value = nameInput.value.trim();
+      bioInput.value = bioInput.value.trim();
       nameInput.setCustomValidity(nameInput.value ? '' : 'Informe seu nome de exibição.');
       if (!profileForm.reportValidity()) return;
       profileError.textContent = '';
       savingProfile = true;
       profileForm.setAttribute('aria-busy', 'true');
-      const controls = [...profileDialog.querySelectorAll('button, input:not(#accountProfileEmail)')];
+      const controls = [...profileDialog.querySelectorAll('button, input:not(#accountProfileEmail), textarea')];
       controls.forEach(control => { control.disabled = true; });
       saveProfile.textContent = 'Salvando…';
       try {
-        const result = await api('/api/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: nameInput.value, avatarData: pendingAvatar }) });
+        const result = await api('/api/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName: nameInput.value, avatarData: pendingAvatar, bannerData: pendingBanner, bio: bioInput.value }) });
         user = result.user;
         renderAccount();
         profileDialog.close();

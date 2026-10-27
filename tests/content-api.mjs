@@ -144,12 +144,14 @@ try {
   assert.deepEqual((await request('/api/home-feature', { method: 'PUT', body: feature, token: adminToken })).data, feature);
   assert.deepEqual((await request('/api/home-feature')).data, feature);
 
-  const profile = { displayName: '  Aventureira das Cinzas  ', avatarData: pngData, role: 'admin' };
+  const profile = { displayName: '  Aventureira das Cinzas  ', avatarData: pngData, bannerData: pngData, bio: '  Entre livros e aventuras.  ', role: 'admin' };
   assert.equal((await request('/api/profile', { method: 'PUT', body: profile })).status, 401);
   const updated = await request('/api/profile', { method: 'PUT', body: profile, token: userToken });
   assert.equal(updated.status, 200);
   assert.equal(updated.data.user.displayName, 'Aventureira das Cinzas');
   assert.equal(updated.data.user.avatarData, pngData);
+  assert.equal(updated.data.user.bannerData, pngData);
+  assert.equal(updated.data.user.bio, 'Entre livros e aventuras.');
   assert.equal(updated.data.user.role, 'user', 'Editing a profile cannot grant administrator access');
   assert.equal((await request('/api/profile', { method: 'PUT', body: { displayName: 'Must not persist', avatarData: fakeImage }, token: userToken })).status, 400);
   const oversizedPng = Buffer.alloc(3 * 1024 * 1024 + 1);
@@ -157,6 +159,36 @@ try {
   assert.equal((await request('/api/profile', { method: 'PUT', body: { displayName: 'Must not persist', avatarData: `data:image/png;base64,${oversizedPng.toString('base64')}` }, token: userToken })).status, 400);
   assert.deepEqual((await request('/api/auth/me', { token: userToken })).data.user, updated.data.user);
   assert.equal((await request('/api/auth/me', { token: adminToken })).data.user.displayName, 'admin', 'Another account remains unchanged');
+  assert.equal((await request('/api/profile', {method:'PUT',body:{bannerData:fakeImage},token:userToken})).status,400);
+  assert.equal((await request('/api/profile', {method:'PUT',body:{bio:'x'.repeat(281)},token:userToken})).status,400);
+  const partial=await request('/api/profile',{method:'PUT',body:{displayName:updated.data.user.displayName},token:userToken});
+  assert.deepEqual(partial.data.user,updated.data.user,'Partial edits preserve both images and bio');
+
+  const magic={kind:'spell',name:'Chama das cinzas',description:'Uma esfera de fogo.',damage:'2d6 + 4',imageData:pngData,isStandard:true};
+  assert.equal((await request('/api/admin/grimoire',{method:'POST',body:magic,token:userToken})).status,403);
+  const personal=await request('/api/grimoire',{method:'POST',body:magic,token:userToken});assert.equal(personal.status,201);
+  const personalId=personal.data.id;
+  assert.deepEqual((await request('/api/grimoire?scope=public')).data.entries,[]);
+  assert.deepEqual((await request('/api/grimoire?scope=mine',{token:adminToken})).data.entries,[],'Admin cannot read other private spells');
+  const ownEntries=(await request('/api/grimoire?scope=mine',{token:userToken})).data.entries;
+  assert.equal(ownEntries[0].imageData,pngData);assert.equal(ownEntries[0].isStandard,false);
+  const published=await request('/api/admin/grimoire',{method:'POST',body:{...magic,kind:'ability',isStandard:false},token:adminToken});
+  assert.equal(published.status,201);const publicId=published.data.id;
+  const publicEntries=(await request('/api/grimoire?scope=public')).data.entries;
+  assert.equal(publicEntries.length,1);assert.equal(publicEntries[0].isStandard,true);assert.equal(publicEntries[0].imageData,pngData);
+  assert.equal((await request('/api/grimoire',{token:userToken})).data.entries.length,2);
+  assert.equal((await request(`/api/grimoire/${publicId}`,{method:'PUT',body:{name:'Intrusão'},token:adminToken})).status,404);
+  assert.equal((await request(`/api/admin/grimoire/${personalId}`,{method:'DELETE',token:adminToken})).status,404);
+  assert.equal((await request(`/api/grimoire/${personalId}`,{method:'PUT',body:{name:'Intrusão'},token:adminToken})).status,404);
+  for(const invalid of [{name:''},{kind:'fake'},{name:'x'.repeat(81)},{imageData:fakeImage}])
+    assert.equal((await request('/api/grimoire',{method:'POST',body:{...magic,...invalid},token:userToken})).status,400);
+  assert.equal((await request(`/api/admin/grimoire/${publicId}`,{method:'PUT',body:{description:'Revisada'},token:adminToken})).status,200);
+  assert.equal((await request('/api/grimoire?scope=public')).data.entries[0].imageData,pngData);
+  assert.equal((await request(`/api/grimoire/${personalId}`,{method:'PUT',body:{imageData:'',description:'',damage:''},token:userToken})).status,200);
+  assert.equal((await request('/api/grimoire?scope=mine',{token:userToken})).data.entries[0].imageData,'');
+  assert.equal((await request(`/api/admin/grimoire/${publicId}`,{method:'DELETE',token:adminToken})).status,204);
+  assert.equal((await request(`/api/grimoire/${personalId}`,{method:'DELETE',token:userToken})).status,204);
+  assert.deepEqual((await request('/api/grimoire?scope=public')).data.entries,[]);
 
   // Verify database persistence, rather than just state retained by a running process.
   await stopServer();

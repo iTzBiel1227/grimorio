@@ -7,6 +7,8 @@
     });
     const pdfPaths = new Map();
     const profileColumns = 'id,username,display_name,avatar_data,account_code,role,created_at';
+    const fullProfileColumns = profileColumns + ',banner_data,bio';
+    const entryColumns = 'id,kind,name,description,damage,image_data,is_standard';
     const bookColumns = 'id,title,description,cover_data,pdf_path,created_at';
     const messageFor = error => ({
       invalid_credentials: 'E-mail ou senha incorretos.',
@@ -29,7 +31,7 @@
     }
     function profile(row, email = '') {
       return { id: row.id, username: row.username, displayName: row.display_name, avatarData: row.avatar_data,
-        accountCode: row.account_code, role: row.role, createdAt: row.created_at, email };
+        bannerData: row.banner_data || '', bio: row.bio || '', accountCode: row.account_code, role: row.role, createdAt: row.created_at, email };
     }
     function sheet(row) {
       return { id: row.id, userId: row.user_id, name: row.name, data: row.data_json, folderId: row.folder_id || null, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at };
@@ -47,13 +49,44 @@
     }
     async function currentUser() {
       const auth = await session();
-      const row = await result(client.from('profiles').select(profileColumns).eq('id', auth.user.id).single());
+      const row = await result(client.from('profiles').select(fullProfileColumns).eq('id', auth.user.id).single());
       return profile(row, auth.user.email || '');
     }
     async function admin() {
       if ((await currentUser()).role !== 'admin') throw new Error('Somente administradores podem alterar o catálogo e o anúncio.');
     }
     function clean(value, limit) { return String(value ?? '').trim().slice(0, limit); }
+    function imageValue(value) {
+      if (value === '') return value;
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value || '');
+      let bytes = '';
+      if (match && match[2].length <= 4194304) { try { bytes = atob(match[2]); } catch {} }
+      const valid = match && bytes.length <= 3 * 1024 * 1024 && (
+        (match[1] === 'png' && bytes.startsWith('\x89PNG\r\n\x1a\n')) ||
+        (match[1] === 'jpeg' && bytes.startsWith('\xff\xd8\xff')) ||
+        (match[1] === 'webp' && bytes.startsWith('RIFF') && bytes.slice(8, 12) === 'WEBP'));
+      if (!valid) throw new Error('Envie uma imagem PNG, JPG ou WebP de até 3 MB.');
+      return value;
+    }
+    function entry(row) {
+      return { id:row.id, kind:row.kind, name:row.name, description:row.description,
+        damage:row.damage, imageData:row.image_data || '', isStandard:!!row.is_standard };
+    }
+    function entryValues(body, creating = false) {
+      const values = {};
+      for (const [key, limit] of [['name',80],['description',5000],['damage',120]]) {
+        if (!creating && !(key in body)) continue;
+        const value = String(body[key] ?? '').trim();
+        if (value.length > limit || (key === 'name' && !value)) throw new Error(`Confira o campo ${key === 'name' ? 'nome' : key === 'description' ? 'descrição' : 'dano'} (até ${limit} caracteres).`);
+        values[key] = value;
+      }
+      if (creating || 'kind' in body) {
+        values.kind = body.kind ?? 'spell';
+        if (!['spell','ability'].includes(values.kind)) throw new Error('Escolha magia ou habilidade.');
+      }
+      if (creating || 'imageData' in body) values.image_data = imageValue(body.imageData ?? '');
+      return values;
+    }
     function registration(body) {
       const username = clean(body.username, 32).toLowerCase();
       const birthDate = String(body.birthDate || '');
@@ -146,12 +179,26 @@
         const row = await result(client.from('site_settings').select('value').eq('key', 'site_content').maybeSingle());
         return row?.value || {};
       }
+      if (path === '/api/grimoire' && method === 'GET' && parsed.searchParams.get('scope') === 'public') {
+        const rows = await result(client.from('grimoire_entries').select(entryColumns).eq('is_standard',true).order('name'));
+        return { entries: rows.map(entry) };
+      }
       const auth = await session();
       const uid = auth.user.id;
       if (path === '/api/profile' && method === 'PUT') {
-        const displayName = clean(body.displayName, 32);
-        if (!displayName) throw new Error('Informe seu nome de exibição.');
-        const row = await result(client.from('profiles').update({ display_name: displayName, avatar_data: body.avatarData || '' }).eq('id', uid).select(profileColumns).single());
+        const values = {};
+        if ('displayName' in body) {
+          values.display_name = String(body.displayName ?? '').trim();
+          if (!values.display_name || values.display_name.length > 32) throw new Error('Informe seu nome de exibição (até 32 caracteres).');
+        }
+        if ('bio' in body) {
+          values.bio = String(body.bio ?? '').trim();
+          if (values.bio.length > 280) throw new Error('Use até 280 caracteres na sua biografia.');
+        }
+        if ('avatarData' in body) values.avatar_data = imageValue(body.avatarData);
+        if ('bannerData' in body) values.banner_data = imageValue(body.bannerData);
+        if (!Object.keys(values).length) return { user: await currentUser() };
+        const row = await result(client.from('profiles').update(values).eq('id', uid).select(fullProfileColumns).single());
         return { user: profile(row, auth.user.email || '') };
       }
       if (path === '/api/sheets' && method === 'GET') {
@@ -191,17 +238,29 @@
         if (method === 'DELETE') { await result(client.from('character_sheets').delete().eq('id', match[1]).eq('user_id', uid)); return null; }
       }
       if (path === '/api/grimoire' && method === 'GET') {
-        const rows = await result(client.from('grimoire_entries').select('*').or(`is_standard.eq.true,owner_user_id.eq.${uid}`).order('created_at', { ascending: false }));
-        return { entries: rows.map(row => ({ id: row.id, kind: row.kind, name: row.name, description: row.description, damage: row.damage, isStandard: row.is_standard })) };
+        let query = client.from('grimoire_entries').select(entryColumns);
+        query = parsed.searchParams.get('scope') === 'mine' ? query.eq('owner_user_id',uid).eq('is_standard',false) : query.or(`is_standard.eq.true,owner_user_id.eq.${uid}`);
+        const rows = await result(query.order('name'));
+        return { entries: rows.map(entry) };
       }
       if (path === '/api/grimoire' && method === 'POST') {
-        return result(client.from('grimoire_entries').insert({ owner_user_id: uid, kind: body.kind === 'ability' ? 'ability' : 'spell', name: clean(body.name, 80) || 'Sem nome', description: clean(body.description, 5000), damage: clean(body.damage, 120), is_standard: false }).select('id').single());
+        return result(client.from('grimoire_entries').insert({ ...entryValues(body,true), owner_user_id: uid, is_standard: false }).select('id').single());
       }
       if ((match = path.match(/^\/api\/grimoire\/([^/]+)$/))) {
         if (method === 'PUT') {
-          await result(client.from('grimoire_entries').update({ name: clean(body.name, 80) || 'Sem nome', description: clean(body.description, 5000), damage: clean(body.damage, 120) }).eq('id', match[1]).eq('owner_user_id', uid).select('id').single()); return { ok: true };
+          await result(client.from('grimoire_entries').update(entryValues(body)).eq('id', match[1]).eq('owner_user_id', uid).eq('is_standard',false).select('id').single()); return { ok: true };
         }
-        if (method === 'DELETE') { await result(client.from('grimoire_entries').delete().eq('id', match[1]).eq('owner_user_id', uid)); return null; }
+        if (method === 'DELETE') { await result(client.from('grimoire_entries').delete().eq('id', match[1]).eq('owner_user_id', uid).eq('is_standard',false).select('id').single()); return null; }
+      }
+      if (path === '/api/admin/grimoire') {
+        await admin();
+        if (method === 'GET') return { entries: (await result(client.from('grimoire_entries').select(entryColumns).eq('is_standard',true).order('name'))).map(entry) };
+        if (method === 'POST') return result(client.from('grimoire_entries').insert({ ...entryValues(body,true), owner_user_id:uid, is_standard:true }).select('id').single());
+      }
+      if ((match = path.match(/^\/api\/admin\/grimoire\/([^/]+)$/))) {
+        await admin();
+        if (method === 'PUT') { await result(client.from('grimoire_entries').update(entryValues(body)).eq('id',match[1]).eq('is_standard',true).select('id').single()); return { ok:true }; }
+        if (method === 'DELETE') { await result(client.from('grimoire_entries').delete().eq('id',match[1]).eq('is_standard',true).select('id').single()); return null; }
       }
       if (path === '/api/my/campaigns' && method === 'GET') {
         const [rows, memberships] = await Promise.all([

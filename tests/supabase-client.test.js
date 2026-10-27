@@ -116,3 +116,37 @@ test('personal grimoire explicitly includes only owned and standard entries even
   await adapter.request('/api/grimoire');
   assert.ok(calls[0].operations.some(op => op.name === 'or' && op.args[0] === 'is_standard.eq.true,owner_user_id.eq.own-user'));
 });
+
+test('public spells work without login and personal lists are restricted to private owned entries', async () => {
+  const guest=harness({authSession:null,respond:()=>({data:[{id:'spell',kind:'spell',name:'Luz',image_data:'image',is_standard:true}]})});
+  assert.equal((await guest.adapter.request('/api/grimoire?scope=public')).entries[0].imageData,'image');
+  assert.ok(guest.calls[0].operations.some(op=>op.name==='eq'&&op.args[0]==='is_standard'&&op.args[1]===true));
+  await assert.rejects(guest.adapter.request('/api/grimoire?scope=mine'),error=>error.status===401);
+  const own=harness();await own.adapter.request('/api/grimoire?scope=mine');
+  assert.ok(own.calls[0].operations.some(op=>op.name==='eq'&&op.args[0]==='owner_user_id'&&op.args[1]==='own-user'));
+  assert.ok(own.calls[0].operations.some(op=>op.name==='eq'&&op.args[0]==='is_standard'&&op.args[1]===false));
+});
+
+test('publication is explicit and admin-only; personal writes cannot promote or overwrite public magic',async()=>{
+  const own=harness({respond:()=>({data:{id:'entry'}})});
+  await assert.rejects(own.adapter.request('/api/admin/grimoire',{method:'POST',body:{name:'Luz'}}),/Somente administradores/);
+  await own.adapter.request('/api/grimoire',{method:'POST',body:{name:'Luz',isStandard:true,owner_user_id:'someone-else'}});
+  const created=own.calls.find(call=>call.table==='grimoire_entries').operations.find(op=>op.name==='insert').args[0];
+  assert.equal(created.is_standard,false);assert.equal(created.owner_user_id,'own-user');
+  await own.adapter.request('/api/grimoire/entry',{method:'PUT',body:{description:'',imageData:'',isStandard:true}});
+  const update=own.calls.at(-1);assert.deepEqual(update.operations.find(op=>op.name==='update').args[0],{description:'',image_data:''});
+  assert.ok(update.operations.some(op=>op.name==='eq'&&op.args[0]==='is_standard'&&op.args[1]===false));
+  const admin=harness({role:'admin',respond:()=>({data:{id:'entry'}})});
+  await admin.adapter.request('/api/admin/grimoire',{method:'POST',body:{name:'Luz',kind:'ability',isStandard:false}});
+  assert.equal(admin.calls.at(-1).operations.find(op=>op.name==='insert').args[0].is_standard,true);
+  await assert.rejects(admin.adapter.request('/api/admin/grimoire',{method:'POST',body:{name:'Bad',imageData:'data:image/png;base64,YmFk'}}),/imagem/);
+});
+
+test('profile updates preserve omitted images, validate banner and bio, and ignore immutable fields',async()=>{
+  const own=harness();
+  await own.adapter.request('/api/profile',{method:'PUT',body:{bio:'  Minha aventura  ',username:'changed',accountCode:'12345678',role:'admin'}});
+  assert.deepEqual(own.calls[0].operations.find(op=>op.name==='update').args[0],{bio:'Minha aventura'});
+  assert.ok(own.calls[0].operations.find(op=>op.name==='select').args[0].includes('banner_data,bio'));
+  await assert.rejects(own.adapter.request('/api/profile',{method:'PUT',body:{bio:'a'.repeat(281)}}),/280/);
+  await assert.rejects(own.adapter.request('/api/profile',{method:'PUT',body:{bannerData:'data:image/svg+xml;base64,YmFk'}}),/imagem/);
+});

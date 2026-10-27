@@ -286,6 +286,39 @@ test('Supabase schema enforces account, campaign, sheet and content permissions'
     await assert.rejects(db.query("insert into public.books(title,pdf_path) values ('Livro','fake.pdf')"), /row-level security/);
   });
   await db.query("update public.profiles set role='admin' where id=$1", [ids[0]]);
+  await t.test('profile banners and public magic preserve private data and enforce publication permissions',async()=>{
+    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZxkAAAAASUVORK5CYII=';
+    let publicId,privateId;
+    await asUser(ids[1],async()=>{
+      await db.query('update public.profiles set banner_data=$1,bio=$2 where id=$3',[png,'Minha aventura',ids[1]]);
+      await assert.rejects(db.query('update public.profiles set bio=$1 where id=$2',['x'.repeat(281),ids[1]]),/check constraint/);
+      await assert.rejects(db.query("update public.profiles set banner_data='data:image/png;base64,YmFk' where id=$1",[ids[1]]),/check constraint/);
+      privateId=(await rows("insert into public.grimoire_entries(owner_user_id,kind,name,image_data) values($1,'spell','Privada com imagem',$2) returning id",[ids[1],png]))[0].id;
+      await assert.rejects(db.query('update public.grimoire_entries set is_standard=true where id=$1',[privateId]),/permission denied/);
+    });
+    await asUser(ids[0],async()=>{
+      assert.equal((await rows('select * from public.grimoire_entries where id=$1',[privateId])).length,0,'Admin cannot read other personal creations');
+      assert.equal((await rows("update public.grimoire_entries set name='Invasão' where id=$1 returning id",[privateId])).length,0);
+      publicId=(await rows("insert into public.grimoire_entries(owner_user_id,kind,name,is_standard,image_data) values($1,'ability','Biblioteca pública',true,$2) returning id",[ids[0],png]))[0].id;
+    });
+    await asUser(null,async()=>{
+      const entries=await rows('select id,image_data from public.grimoire_entries');
+      assert.deepEqual(entries,[{id:publicId,image_data:png}]);
+      await assert.rejects(db.query("insert into public.grimoire_entries(owner_user_id,kind,name) values($1,'spell','Invasão')",[ids[0]]),/permission denied/);
+    },'anon');
+    await asUser(ids[1],async()=>{
+      assert.equal((await rows("update public.grimoire_entries set name='Invasão' where id=$1 returning id",[publicId])).length,0);
+      assert.equal((await rows('delete from public.grimoire_entries where id=$1 returning id',[publicId])).length,0);
+      await assert.rejects(db.query("insert into public.grimoire_entries(owner_user_id,kind,name,is_standard) values($1,'spell','Invasão',true)",[ids[1]]),/row-level security/);
+    });
+    await db.query("update public.profiles set role='admin' where id=$1",[ids[11]]);
+    await asUser(ids[11],async()=>{
+      await db.query("update public.grimoire_entries set description='Revisada',image_data='' where id=$1",[publicId]);
+      assert.equal((await rows('select image_data from public.grimoire_entries where id=$1',[publicId]))[0].image_data,'');
+      await db.query('delete from public.grimoire_entries where id=$1',[publicId]);
+    });
+    await db.query("update public.profiles set role='user' where id=$1",[ids[11]]);
+  });
   await asUser(ids[0], async () => {
     const found = await rpc('select public.admin_find_account($1) as result', ['player11@example.test']);
     assert.equal(found.user.id, ids[11]);

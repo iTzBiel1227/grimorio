@@ -4,12 +4,14 @@ Projeto: [Grimório](https://supabase.com/dashboard/project/fisrzivzjfehmdnoxfkx
 
 A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campanhas. `preserve_sheet_portraits` mantém o retrato de até 3 MB dentro de um JSON de ficha limitado a 6 MiB. A migração `community_campaigns` acrescenta identidade de usuário, consentimento de amizade, convites, pastas, colaboração nas fichas, histórico de dados e administração explícita.
 
+`profile_and_public_grimoire` acrescenta banner e biografia ao perfil, imagens aos poderes e leitura anônima da biblioteca pública. Publicações são criadas apenas por administradores; criações privadas só podem ser lidas e alteradas pelo dono, inclusive quando outra conta é administradora. O campo de publicação não pode ser alterado após a criação. As imagens são validadas como PNG/JPG/WebP de até 3 MiB.
+
 ## Estrutura
 
 | Área | Tabelas / serviço |
 | --- | --- |
 | Cadastro, confirmação de e-mail, senha e sessão | Supabase Auth |
-| Nome de usuário único, nome de exibição, foto e código de 8 números | `profiles` |
+| Nome de usuário único, nome de exibição, foto, banner, biografia e código de 8 números | `profiles` |
 | Nascimento privado da conta | `account_details` |
 | Fichas em JSON, pasta e versão de edição | `character_sheets` |
 | Pastas e subpastas da biblioteca | `sheet_folders` |
@@ -29,7 +31,7 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 | Textos da página inicial, vaquinha e anúncio | `site_settings` |
 | PDFs de até 20 MB | Bucket `book-pdfs` |
 
-As 18 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
+As 18 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs, os poderes publicados e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
 
 ## Contas, identidade e administração
 

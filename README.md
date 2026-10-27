@@ -6,6 +6,8 @@ A publicação usa Supabase Auth, PostgreSQL, Storage e Realtime. O modo local u
 
 A [conferência dos 14 pedidos da atualização](docs/pedidos-da-atualizacao.md) registra onde usar cada recurso e as decisões posteriores sobre cadastro e D20.
 
+A [atualização de perfil, biblioteca e dados 3D](docs/perfil-biblioteca-dados.md) registra os sete pedidos seguintes, incluindo o D20 no fundo da página inicial e os modelos adicionais.
+
 ## Executar localmente
 
 Use Node.js 22 ou superior:
@@ -25,13 +27,13 @@ Para reiniciar o servidor quando o código mudar, use `npm.cmd run dev`. Altera�
 
 No Supabase, a confirmação por e-mail permanece habilitada. Após cadastrar, a página orienta a confirmar o endereço; ela não apresenta uma sessão inexistente. Quando o serviço retorna uma sessão válida, o cadastro encaminha para o início com a conta autenticada. O modo SQLite local cria uma sessão diretamente, sem serviço de envio de e-mail.
 
-Cada conta possui um código único e permanente de 8 números. O perfil mostra o nome de usuário e o código como texto, com um botão para copiar o código. É possível editar o nome de exibição, selecionar uma foto PNG/JPG/WEBP de até 3 MB, conferir a prévia e remover a foto. Os nomes de usuário e códigos não são campos editáveis.
+Cada conta possui um código único e permanente de 8 números. O perfil mostra o nome de usuário e o código como texto, com um botão para copiar o código. É possível editar nome de exibição, foto, banner e biografia de até 280 caracteres, com prévia antes de salvar. Foto e banner aceitam PNG/JPG/WEBP de até 3 MiB cada. Os nomes de usuário e códigos não são campos editáveis.
 
 Ao abrir Amigos, Campanhas ou Fichas sem sessão válida, o login aparece automaticamente. Depois de entrar, o site retorna à página solicitada, preservando o contexto do convite. Abrir a página inicial normalmente não exibe o login.
 
 ## Amigos e convites de campanha
 
-Em **Amigos**, busque pelo nome de usuário, nome de exibição ou código da conta. A busca não divulga e-mails. Enviar uma solicitação não cria uma amizade imediatamente: a outra pessoa precisa aceitá-la. A página separa solicitações recebidas e enviadas, permite aceitar, recusar ou cancelar pedidos e permite desfazer amizades.
+Em **Amigos**, a tela principal mostra a lista de amigos. **Adicionar amigo** abre a busca por nome de usuário, nome de exibição ou código da conta. A busca não divulga e-mails. O sino indica solicitações recebidas e abre as abas de pedidos recebidos/enviados. Só há amizade após aceitar; também é possível recusar, cancelar ou desfazer a amizade pelo menu de cada pessoa.
 
 Em **Campanhas**, há busca, filtros por papel e contagem de campanhas. O mestre pode abrir **Participantes e convites** diretamente no cartão da campanha ou usar **Convidar amigos** no lobby. Os convites são enviados a amigos e aparecem na página de campanhas do destinatário. Aceitar adiciona a pessoa ao grupo, sem exigir que ela entre no lobby naquele momento.
 
@@ -51,7 +53,7 @@ Anotações do mestre ficam privadas. O chat permite mensagens para o grupo e me
 
 Testes e rolagens feitos na ficha conectada à campanha aparecem também no tabuleiro e no histórico. Todos recebem o mesmo resultado, bônus, total e identificação da rolagem. Por exemplo: `D20: 16 · Bônus: +4 · Total: 20`.
 
-O D20 usa o modelo fornecido pelo usuário em `public/assets/grimorio-d20.glb`, renderizado com Three.js. Cannon ES simula queda, rotação, colisões e quique com uma semente compartilhada. O resultado é sorteado no servidor; a animação apresenta esse resultado na pose final. Assim, a física visual não permite que cada navegador escolha um resultado diferente. Os demais dados usam formas geradas pela aplicação.
+Os dados usam os modelos fornecidos pelo usuário em `public/assets/grimorio-d20.glb` e `public/assets/grimorio-dice-set.glb`, renderizados com Three.js. Cannon ES simula queda, rotação, colisões e quique com uma semente compartilhada. O resultado é sorteado no servidor; a animação apresenta esse resultado na pose final. D4, D6, D8, D10 e D12 recebem numeração sobre as malhas originais. O D100 usa dezenas e unidades em dois dados; 00 + 0 representa 100. Formas geradas são usadas apenas se o arquivo 3D não puder ser carregado.
 
 O histórico de campanha é persistente e oferece carregamento de rolagens anteriores. Há tratamento de mensagens duplicadas, fila de animações, respeito à preferência de movimento reduzido e apresentação textual do resultado se o navegador não puder usar WebGL.
 
@@ -59,12 +61,17 @@ O histórico de campanha é persistente e oferece carregamento de rolagens anter
 
 ## Livros, administração e página inicial
 
+**Magias** abre na biblioteca pública criada pelos administradores, com busca por nome, descrição ou dano e filtros de tipo. **Minhas magias** contém as criações privadas da conta. Ambos os tipos aceitam nome, descrição, dano/efeito e imagem de até 3 MiB. A ficha importa uma cópia do poder com miniatura compacta, preservada mesmo se a publicação mudar.
+
+Na página inicial, um D20 grande e semitransparente gira conforme a rolagem. A navegação até a apresentação é suave; as animações respeitam a preferência de movimento reduzido e o cenário 3D deixa de renderizar quando está parado.
+
 O catálogo e a leitura de PDFs são públicos. Em **Livros**, administradores podem publicar título, descrição, PDF de até 20 MB e capa PNG/JPG/WEBP de até 3 MB. **Ler livro** abre o visualizador do navegador dentro da plataforma, com alternativas para abrir em outra aba ou baixar. `/livros.html?book=ID` abre o livro correspondente.
 
 O link **Administração** aparece para contas com papel `admin`. O painel `/admin.html` permite:
 
 - Buscar uma conta existente pelo e-mail, conferir o perfil e código e conceder acesso de administrador.
 - Editar títulos, descrições e capas dos livros, substituir PDFs e excluir publicações.
+- Criar, revisar, ilustrar e excluir magias e habilidades da biblioteca pública.
 - Alterar os textos da página inicial, a apresentação do projeto e o texto/link da vaquinha.
 - Consultar sugestões da comunidade e acessar a edição do anúncio.
 

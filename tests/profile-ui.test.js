@@ -37,7 +37,7 @@ async function harness({ loggedIn = true, search = '' } = {}) {
   const main = new Control();
   const dialogs = [], requests = [], changes = [];
   const state = {
-    user: { id: 'profile-test', displayName: 'Antes', email: 'profile@example.com', avatarData: '' },
+    user: { id: 'profile-test', username: 'morgana', accountCode: '12345678', displayName: 'Antes', email: 'profile@example.com', avatarData: '', bannerData: '', bio: '' },
     rejectSave: false,
   };
   const context = {
@@ -143,6 +143,60 @@ test('unsupported, oversized and undecodable images are rejected without changin
   await h.photo.onchange();
   assert.match(h.error.textContent, /válida/);
   await h.submit();
+  assert.equal(h.state.user.avatarData, '');
+});
+
+test('profile banner and biography preview and save independently from immutable identity', async () => {
+  const h = await harness();
+  h.button.onclick();
+  const banner = h.profile.querySelector('#accountBannerInput');
+  const bio = h.profile.querySelector('#accountBio');
+  banner.files = [{ type: 'image/webp', size: 100, data: 'data:image/webp;base64,BANNER' }];
+  await banner.onchange();
+  bio.value = '  Uma aventura <por vez>.  ';
+  bio.oninput();
+  assert.match(h.profile.querySelector('#accountBannerPreview').innerHTML, /BANNER/);
+  assert.equal(h.profile.querySelector('#accountPreviewBio').textContent, 'Uma aventura <por vez>.');
+  assert.equal(h.profile.querySelector('#accountPreviewUsername').textContent, '@morgana');
+  assert.equal(h.profile.querySelector('#accountBioCount').textContent, `${bio.value.length} / 280`);
+  await h.submit();
+  assert.equal(h.state.user.bio, 'Uma aventura <por vez>.');
+  assert.equal(h.state.user.bannerData, 'data:image/webp;base64,BANNER');
+  const saved = JSON.parse(h.requests.find(item => item.url === '/api/profile').options.body);
+  assert.equal(Object.hasOwn(saved, 'username'), false);
+  assert.equal(Object.hasOwn(saved, 'accountCode'), false);
+  h.button.onclick();
+  h.profile.querySelector('#accountRemoveBanner').onclick();
+  h.profile.querySelector('[data-profile-cancel]').onclick();
+  h.button.onclick();
+  assert.match(h.profile.querySelector('#accountBannerPreview').innerHTML, /BANNER/);
+  h.profile.querySelector('#accountRemoveBanner').onclick();
+  await h.submit();
+  assert.equal(h.state.user.bannerData, '');
+});
+
+test('saving waits for both image reads and cancelling rejects stale image completions', async () => {
+  const h = await harness();
+  const readers = [];
+  h.context.FileReader = class { readAsDataURL(file) { this.result = file.data; readers.push(this); } };
+  h.button.onclick();
+  h.photo.files = [{ type: 'image/png', size: 10, data: 'data:image/png;base64,AVATAR' }];
+  const banner = h.profile.querySelector('#accountBannerInput');
+  banner.files = [{ type: 'image/png', size: 10, data: 'data:image/png;base64,BANNER' }];
+  const avatarRead = h.photo.onchange(), bannerRead = banner.onchange();
+  assert.equal(h.profile.querySelector('#accountSaveProfile').disabled, true);
+  readers[0].onload();
+  await avatarRead;
+  assert.equal(h.profile.querySelector('#accountSaveProfile').disabled, true);
+  await h.submit();
+  assert.equal(h.requests.filter(item => item.url === '/api/profile').length, 0);
+  h.profile.querySelector('[data-profile-cancel]').onclick();
+  h.button.onclick();
+  readers[1].onload();
+  await bannerRead;
+  assert.doesNotMatch(h.profile.querySelector('#accountBannerPreview').innerHTML, /BANNER/);
+  await h.submit();
+  assert.equal(h.state.user.bannerData, '');
   assert.equal(h.state.user.avatarData, '');
 });
 
