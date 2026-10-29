@@ -8,6 +8,8 @@ A [conferência dos 14 pedidos da atualização](docs/pedidos-da-atualizacao.md)
 
 A [atualização de perfil, biblioteca e dados 3D](docs/perfil-biblioteca-dados.md) registra os sete pedidos seguintes, incluindo o D20 no fundo da página inicial e os modelos adicionais.
 
+A [Fase 1 da expansão de campanhas](GRIMORIO_EXPANSAO.md) documenta o Hub, as permissões, o Modo Mestre e o histórico de sessões.
+
 ## Executar localmente
 
 Use Node.js 22 ou superior:
@@ -38,6 +40,10 @@ Em **Amigos**, a tela principal mostra a lista de amigos. **Adicionar amigo** ab
 Em **Campanhas**, há busca, filtros por papel e contagem de campanhas. O mestre pode abrir **Participantes e convites** diretamente no cartão da campanha ou usar **Convidar amigos** no lobby. Os convites são enviados a amigos e aparecem na página de campanhas do destinatário. Aceitar adiciona a pessoa ao grupo, sem exigir que ela entre no lobby naquele momento.
 
 O lobby distingue participantes cadastrados de pessoas conectadas: os indicadores e lugares ao redor da mesa acompanham a presença em tempo real. A campanha admite até 10 participantes, incluindo o mestre. O convite por código/link também continua disponível.
+
+Criar, entrar por código ou abrir uma campanha leva ao **Hub da campanha**, em `/campanha-hub.html?code=CODIGO`. A visão geral reúne capa, descrição, participantes, resumo público e próxima sessão. As abas **Personagens** e **Sessões** mostram as fichas autorizadas e os últimos 20 encontros. **Entrar na mesa** mantém o acesso ao lobby e à sessão existentes.
+
+Somente o mestre gerencia os dados e a capa, inicia ou encerra sessões e ativa o **Modo Mestre** para consultar e salvar notas privadas. Encerrar exige confirmação; continuar reutiliza a sessão ativa. Ser administrador global não concede essas permissões em campanhas de outras pessoas. As próximas fases da expansão continuam planejadas.
 
 ## Fichas, biblioteca e mesa
 
@@ -107,7 +113,7 @@ O `netlify.toml` define:
 | Node.js | `22` |
 | Pretty URLs | Desativado, preservando os caminhos `.html` |
 
-Após enviar para `main`, aguarde o deploy automático ou use **Deploys → Trigger deploy → Deploy site**. Em publicação manual, envie a pasta `dist` gerada. Confira que `index.html`, `cadastro.html`, `amigos.html`, `campanha.html`, `ficha.html`, `livros.html` e `assets/` estão na raiz publicada.
+Após enviar para `main`, aguarde o deploy automático ou use **Deploys → Trigger deploy → Deploy site**. Em publicação manual, envie a pasta `dist` gerada. Confira que `index.html`, `cadastro.html`, `amigos.html`, `campanha.html`, `campanha-hub.html`, `ficha.html`, `livros.html` e `assets/` estão na raiz publicada.
 
 As rotas são arquivos HTML reais, como `/amigos.html`. Não há `vite.config` nem roteador SPA, e não é necessário adicionar `/* /index.html 200` a `public/_redirects`. Publicar a raiz do repositório, em vez de `dist`, pode causar erro 404 por ausência de `index.html` naquele diretório.
 

@@ -8,7 +8,11 @@
     if (window.GrimorioSupabase) return window.GrimorioSupabase.request(url, options);
     const response = await fetch(url, { ...options, headers: authHeaders({...(options.body ? {'Content-Type':'application/json'} : {}),...(options.headers || {})}) });
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.error || (response.status === 404 ? 'Esta função não está disponível no servidor. Atualize o servidor do Grimório e tente novamente.' : 'Não foi possível concluir.'));
+    if (!response.ok) {
+      const error = new Error(data?.error || (response.status === 404 ? 'Esta função não está disponível no servidor. Atualize o servidor do Grimório e tente novamente.' : 'Não foi possível concluir.'));
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
   async function currentUser() {
@@ -26,7 +30,7 @@
   function authDestination() {
     if (typeof location === 'undefined') return '';
     const next = new URLSearchParams(location.search).get('next') || '';
-    return /^\/(?:amigos|campanha|ficha|magias|sugestoes|lobby|sessao|admin)\.html(?:\?[^#]*)?$/.test(next) ? next : '';
+    return /^\/(?:amigos|campanha|campanha-hub|ficha|magias|sugestoes|lobby|sessao|admin)\.html(?:\?[^#]*)?$/.test(next) ? next : '';
   }
   function esc(value = '') {
     return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -37,6 +41,12 @@
       : `<span class="avatar-fallback ${esc(size)}">${esc((user?.displayName || user?.email || '?')[0].toUpperCase())}</span>`;
   }
   window.Grimorio = { api, currentUser, requireUser, loginRedirect, authHeaders, esc, avatar, AUTH_KEY };
+
+  // Keep contextual campaign navigation on physical lobby/table pages.
+  const hubCode = typeof location === 'undefined' ? '' : (new URLSearchParams(location.search).get('code') || '').toUpperCase();
+  if (/^[A-F0-9]{6}$/.test(hubCode)) {
+    document.querySelectorAll('[data-campaign-hub]').forEach(link => { link.href = '/campanha-hub.html?code=' + encodeURIComponent(hubCode); });
+  }
 
   // A private scope keeps these helpers compatible with the character sheet.
   async function mountAccount() {

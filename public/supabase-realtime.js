@@ -11,6 +11,7 @@
     let role = '';
     let user = null;
     let notes = '';
+    let hubOnly = false;
     let members = new Map();
     let players = [];
     let seenRolls = new Set();
@@ -67,7 +68,7 @@
       return {
         campaign: {
           ...campaign,
-          state: { ...campaign.state, ...(role === 'master' ? { notes } : {}) }
+          state: { ...campaign.state, ...(role === 'master' && !hubOnly ? { notes } : {}) }
         },
         players
       };
@@ -78,7 +79,7 @@
       // Notes must never arrive through the shared campaign JSON.
       delete campaign.state.notes;
       const rolls = campaign.state.rolls || [];
-      if (!initial) {
+      if (!initial && !hubOnly) {
         for (const roll of [...rolls].reverse()) {
           if (!seenRolls.has(roll.id)) dispatch('dice:result', roll);
         }
@@ -86,6 +87,7 @@
       for (const roll of rolls) seenRolls.add(roll.id);
       while (seenRolls.size > 1000) seenRolls.delete(seenRolls.values().next().value);
       dispatch('room:state', statePayload());
+      dispatch('campaign:updated', { code: campaign.code });
       if (!initial && !wasStarted && campaign.status === 'session') {
         dispatch('campaign:started', { code: campaign.code });
       }
@@ -93,7 +95,7 @@
     function refreshCampaign(version) {
       refreshes = refreshes.then(async () => {
         if (!isCurrent(version)) return;
-        const info = await checked(client.rpc('get_campaign', { p_code: campaign.code }));
+        const info = await checked(client.rpc(hubOnly ? 'get_campaign_hub' : 'get_campaign', { p_code: campaign.code }));
         if (!isCurrent(version)) return;
         if (info.role === 'guest') {
           report(Error('Sua conta não participa mais desta campanha.'));
@@ -102,7 +104,11 @@
         }
         role = info.role;
         applyCampaign(info.campaign);
-      }).catch(error => { if (version === generation) report(error); });
+      }).catch(error => {
+        if (version !== generation) return;
+        report(error);
+        if (error?.code === '42501') socket.disconnect();
+      });
       return refreshes;
     }
     async function loadMembers(version) {
@@ -192,6 +198,7 @@
       const code = String(payload.code || '').trim().toUpperCase();
       if (!code) throw Error('Informe o código da campanha.');
       socket.disconnect();
+      hubOnly = payload.view === 'hub';
       const version = generation;
       await leaving;
       const auth = await client.auth.getUser();
@@ -199,7 +206,7 @@
       user = auth.data?.user;
       if (!user) throw Error('Entre na sua conta para participar da mesa.');
       if (version !== generation) return;
-      const info = await checked(client.rpc('get_campaign', { p_code: code }));
+      const info = await checked(client.rpc(hubOnly ? 'get_campaign_hub' : 'get_campaign', { p_code: code }));
       if (version !== generation) return;
       if (!info?.campaign || info.role === 'guest') {
         throw Error('Entre na campanha pela página de campanhas antes de abrir a mesa.');
@@ -214,7 +221,7 @@
       bufferedMessages = [];
       await loadMembers(version);
       if (!isCurrent(version)) return;
-      if (role === 'master') {
+      if (role === 'master' && !hubOnly) {
         const row = await checked(client.from('campaign_notes').select('notes')
           .eq('campaign_id', campaign.id).maybeSingle());
         if (!isCurrent(version)) return;
@@ -231,31 +238,35 @@
           () => refreshCampaign(version))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_members', filter: `campaign_id=eq.${campaign.id}` },
           () => loadMembers(version).catch(report))
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_messages', filter: `campaign_id=eq.${campaign.id}` },
-          event => receiveMessage(event.new, version))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'character_sheet_versions' },
           event => {
             if (event.eventType === 'DELETE') {
               if (isCurrent(version)) dispatch('sheet:list-changed');
               return;
             }
-            receiveSheet(event.new,version).catch(error=>{if(isCurrent(version))report(error);});
+            if (hubOnly) { if (isCurrent(version)) dispatch('sheet:list-changed'); }
+            else receiveSheet(event.new,version).catch(error=>{if(isCurrent(version))report(error);});
           })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_sheet_assignments', filter: `campaign_id=eq.${campaign.id}` },
-          () => {if(isCurrent(version))dispatch('sheet:list-changed');})
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_rolls', filter: `campaign_id=eq.${campaign.id}` },
-          event => receiveRoll(event.new,version))
-        .subscribe(async status => {
+          () => {if(isCurrent(version))dispatch('sheet:list-changed');});
+      if (!hubOnly) {
+        channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_messages', filter: `campaign_id=eq.${campaign.id}` },
+          event => receiveMessage(event.new, version));
+        channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_rolls', filter: `campaign_id=eq.${campaign.id}` },
+          event => receiveRoll(event.new, version));
+      }
+      channel.subscribe(async status => {
           if (!isCurrent(version) || currentChannel !== channel) return;
           if (status === 'SUBSCRIBED') {
             socket.connected = true;
             try {
               await currentChannel.track({ userId: user.id });
               await refreshCampaign(version);
-              await loadHistory(version);
+              if (!hubOnly) await loadHistory(version);
             } catch (error) { if (isCurrent(version)) report(error); }
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             socket.connected = false;
+            dispatch('disconnect');
             report(Error('A conexão ao vivo foi interrompida. Recarregue a página para reconectar.'));
           }
         });

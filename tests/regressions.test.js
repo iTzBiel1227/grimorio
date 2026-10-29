@@ -20,7 +20,7 @@ test('campaign creation reads and trims the field despite window.name', async ()
   await h.nodes.get('#create').listeners.submit({ preventDefault() {} });
   const request = h.calls.find(c => c.url === '/api/campaigns');
   assert.deepEqual(JSON.parse(request.options.body), { name: 'As Cinzas do Reino' });
-  assert.equal(h.context.location.href, '/lobby.html?code=ABC123');
+  assert.equal(h.context.location.href, '/campanha-hub.html?code=ABC123');
 });
 test('whitespace is rejected and editing clears the validation message', async () => {
   const h = harness('   ');
@@ -46,7 +46,7 @@ test('campaign search filters saved worlds without changing totals', async()=>{
  await vm.runInNewContext(source,h.context);
  assert.equal(h.nodes.get('#campaignTotal').textContent,2);
  assert.equal(h.nodes.get('#campaignMasterTotal').textContent,1);
- assert.match(h.nodes.get('#campaigns').innerHTML,/sessao.html\?code=BBB222/);
+ assert.match(h.nodes.get('#campaigns').innerHTML,/campanha-hub.html\?code=BBB222/);
  h.nodes.get('#campaignSearch').value='cinzas';h.nodes.get('#campaignSearch').listeners.input();
  assert.match(h.nodes.get('#campaigns').innerHTML,/Cinzas/);
  assert.doesNotMatch(h.nodes.get('#campaigns').innerHTML,/BBB222/);

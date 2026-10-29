@@ -6,6 +6,8 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 
 `profile_and_public_grimoire` acrescenta banner e biografia ao perfil, imagens aos poderes e leitura anônima da biblioteca pública. Publicações são criadas apenas por administradores; criações privadas só podem ser lidas e alteradas pelo dono, inclusive quando outra conta é administradora. O campo de publicação não pode ser alterado após a criação. As imagens são validadas como PNG/JPG/WebP de até 3 MiB.
 
+`campaign_hub` acrescenta descrição, resumo público, próxima sessão, capas privadas e o histórico mínimo de encontros da campanha. As RPCs conferem membro/proprietário no banco; notas privadas continuam na tabela existente. A [documentação da Fase 1](../GRIMORIO_EXPANSAO.md) descreve o modelo, a adaptação de campanhas legadas e as limitações desta entrega.
+
 ## Estrutura
 
 | Área | Tabelas / serviço |
@@ -18,6 +20,7 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 | Sinalização de versões para sincronizar fichas | `character_sheet_versions` |
 | Magias e habilidades | `grimoire_entries` |
 | Campanhas, tabuleiro e últimas rolagens | `campaigns` |
+| Número, título, início e término dos encontros | `campaign_sessions` |
 | Participantes e nome na mesa | `campaign_members` |
 | Convites de amigos para campanhas | `campaign_invitations` |
 | Anotações privadas do mestre | `campaign_notes` |
@@ -30,8 +33,9 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 | Catálogo e caminho do PDF | `books` |
 | Textos da página inicial, vaquinha e anúncio | `site_settings` |
 | PDFs de até 20 MB | Bucket `book-pdfs` |
+| Capas privadas de campanha de até 3 MiB | Bucket `campaign-covers` |
 
-As 18 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs, os poderes publicados e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
+As 19 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs, os poderes publicados e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
 
 ## Contas, identidade e administração
 
@@ -113,4 +117,4 @@ npm.cmd run test:e2e
 
 O E2E usa servidor e SQLite temporários, com dois contextos de navegador para mestre/jogador, e cobre presença, convites, fichas simultâneas, D20, histórico e controle de acesso. Capturas ficam em `.tmp/screenshots/`. Ele não altera o banco Supabase nem testa o envio real de e-mail.
 
-`test:supabase:remote` é somente leitura: confere conteúdo público e bloqueio de acesso sem autenticação. Não cria contas nem envia e-mails. A validação de cadastro e confirmação no ambiente hospedado depende do Auth e do provedor de e-mail reais; testes locais e de leitura não substituem essa etapa.
+`test:supabase:remote` confere conteúdo público e bloqueio de acesso sem autenticação, incluindo a presença das quatro RPCs do Hub e da tabela de sessões. As chamadas anônimas de escrita são recusadas pelas permissões; nenhum dado é alterado. Não cria contas nem envia e-mails. A validação de cadastro e confirmação no ambiente hospedado depende do Auth e do provedor de e-mail reais; testes locais e de leitura não substituem essa etapa.

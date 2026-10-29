@@ -8,7 +8,7 @@ const session = { access_token: 'native-refreshed-token', user: { id: 'own-user'
 const user = { id: 'own-user', display_name: 'Jogador', avatar_data: '', account_code: '00001234', role: 'user' };
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function harness({ authSession = session, role = 'user', respond = () => ({ data: [] }) } = {}) {
+function harness({ authSession = session, role = 'user', respond = () => ({ data: [] }), storageRespond } = {}) {
   const calls = [];
   const client = {
     auth: {
@@ -31,10 +31,11 @@ function harness({ authSession = session, role = 'user', respond = () => ({ data
     rpc: async (name, args) => { const call = { type: 'rpc', name, args: plain(args) }; calls.push(call); return respond(call); },
     storage: {
       from(bucket) {
-        assert.equal(bucket, 'book-pdfs');
+        assert.ok(['book-pdfs', 'campaign-covers'].includes(bucket));
         return {
           getPublicUrl(path, options) { return { data: { publicUrl: `https://storage.example/${path}${options?.download ? '?download=' : ''}` } }; },
-          async upload(path, bytes, options) { calls.push({ type: 'upload', path, bytes: Buffer.from(bytes).toString(), options: plain(options) }); return { data: { path } }; },
+          async createSignedUrl(path, expires) { const call = { type: 'sign', bucket, path, expires }; calls.push(call); return storageRespond?.(call) || { data: { signedUrl: `https://storage.example/signed/${path}` } }; },
+          async upload(path, bytes, options) { const call = { type: 'upload', bucket, path, bytes: Buffer.from(bytes).toString(), options: plain(options) }; calls.push(call); return storageRespond?.(call) || { data: { path } }; },
           async remove(paths) { calls.push({ type: 'remove', paths: plain(paths) }); return { data: paths }; }
         };
       }
@@ -59,6 +60,54 @@ test('Supabase uses its current auth session and maps profiles without relying o
   const signin = await adapter.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: ' OWN@example.test ', password: 'password' }) });
   assert.equal(signin.token, session.access_token);
   assert.equal(calls.find(call => call.type === 'signin').input.email, 'own@example.test');
+});
+
+test('campaign hub uses authorized RPCs, private covers and transactional session commands', async () => {
+  const h = harness({ respond: call => ({ data: call.name === 'get_campaign_hub'
+    ? { campaign: { id: 'campaign-id', coverPath: 'campaign-id/cover.png' }, permissions: { canManage: true } }
+    : { ok: true } }) });
+  const hub = await h.adapter.request('/api/campaigns/abc123/hub');
+  assert.equal(hub.campaign.coverUrl, 'https://storage.example/signed/campaign-id/cover.png');
+  await h.adapter.request('/api/campaigns/abc123/hub', { method: 'PUT', body: { name: 'Valenne', owner_user_id: 'attacker', status: 'session', coverPath: 'other/secret.png' } });
+  assert.deepEqual(h.calls.find(call => call.name === 'update_campaign_hub').args, { p_code: 'ABC123', p_patch: { name: 'Valenne' } });
+  assert.equal(h.calls.filter(call => call.type === 'sign').length, 1, 'Repeated realtime refreshes reuse signed cover URLs');
+  await h.adapter.request('/api/campaigns/abc123/start', { method: 'POST', body: { title: 'O retorno' } });
+  await h.adapter.request('/api/campaigns/abc123/lobby', { method: 'POST' });
+  assert.deepEqual(h.calls.filter(call => /^(start|end)_campaign_session$/.test(call.name)).map(call => ({ name: call.name, args: call.args })), [
+    { name: 'start_campaign_session', args: { p_code: 'ABC123', p_title: 'O retorno' } },
+    { name: 'end_campaign_session', args: { p_code: 'ABC123' } }
+  ]);
+  assert.equal(h.calls.some(call => call.table === 'campaigns'), false, 'No direct status update bypasses session transactions');
+});
+
+test('campaign notes and uploads refuse a player before any private query or Storage upload', async () => {
+  const h = harness({ respond: call => ({ data: call.name === 'get_campaign_hub'
+    ? { campaign: { id: 'campaign-id', coverPath: '' }, permissions: { canManage: false } }
+    : { role: 'player', campaign: { id: 'campaign-id' } } }) });
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/notes'), /Somente o mestre/);
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/notes', { method: 'PUT', body: { notes: 'secret' } }), /Somente o mestre/);
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/cover', { method: 'PUT', body: { imageData: '' } }), /Somente o mestre/);
+  assert.equal(h.calls.some(call => call.table === 'campaign_notes' || call.type === 'upload'), false);
+});
+
+test('campaign cover upload validates bytes and cleans its new object when the metadata write fails', async () => {
+  const h = harness({ respond: call => call.name === 'get_campaign_hub'
+    ? { data: { campaign: { id: 'campaign-id', coverPath: '' }, permissions: { canManage: true } } }
+    : { error: { message: 'metadata failed' } } });
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/cover', { method: 'PUT', body: { imageData: 'data:image/png;base64,YmFk' } }), /imagem/);
+  assert.equal(h.calls.some(call => call.type === 'upload'), false);
+  const imageData = 'data:image/png;base64,' + Buffer.from('\x89PNG\r\n\x1a\n', 'latin1').toString('base64');
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/cover', { method: 'PUT', body: { imageData } }), /metadata failed/);
+  assert.equal(h.calls.find(call => call.type === 'upload').bucket, 'campaign-covers');
+  assert.deepEqual(h.calls.find(call => call.type === 'remove').paths, ['campaign-id/book-id.png']);
+});
+
+test('a temporary Storage signing failure keeps the campaign hub usable', async () => {
+  const h = harness({ respond: () => ({ data: { campaign: { id: 'campaign-id', coverPath: 'campaign-id/a.png' } } }),
+    storageRespond: () => ({ error: { message: 'Storage offline' } }) });
+  const hub = await h.adapter.request('/api/campaigns/ABC123/hub');
+  assert.equal(hub.campaign.coverUrl, '');
+  assert.match(hub.coverError, /capa/);
 });
 
 test('email-confirmation signup never invents a session and guests get a login status for protected data', async () => {

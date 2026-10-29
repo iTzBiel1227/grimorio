@@ -33,7 +33,11 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ rpc: name, args });
-      if (options.rpcError) return { error: { message: options.rpcError } };
+      if (options.rpcError) return { error: typeof options.rpcError === 'string' ? { message: options.rpcError } : options.rpcError };
+      if (name === 'get_campaign_hub') {
+        const { state, ...summary } = currentCampaign;
+        return { data: { campaign: summary, role: options.role || 'player' } };
+      }
       if (name === 'get_campaign') return {
         data: {
           campaign: { ...currentCampaign, state: { ...currentCampaign.state } },
@@ -96,14 +100,15 @@ function harness(options = {}) {
   const window = { GrimorioSupabase: { client }, addEventListener() {} };
   vm.runInNewContext(source, { window });
   const socket = window.io();
-  for (const name of ['app:error', 'room:state', 'room:players', 'dice:result', 'session:message']) {
+  for (const name of ['app:error', 'room:state', 'room:players', 'dice:result', 'session:message', 'campaign:updated', 'disconnect']) {
     socket.on(name, value => events.push({ name, value }));
   }
   return {
     socket, calls, channels, events,
     auth(event) { authListener(event); },
     changeCampaign(value) { currentCampaign = { ...currentCampaign, ...value }; },
-    async join() { socket.emit('room:join', { code: 'abc123' }); await settle(); }
+    failRpc(error) { options.rpcError = error; },
+    async join(payload = {}) { socket.emit('room:join', { code: 'abc123', ...payload }); await settle(); }
   };
 }
 
@@ -209,4 +214,39 @@ test('history and a matching live insert render only one message', async () => {
   h.channels[0].fire('postgres_changes', 'campaign_messages', { new: message });
   await settle();
   assert.equal(h.events.filter(event => event.name === 'session:message').length, 1);
+});
+
+test('hub reuses one authorized channel without fetching notes, chat history or dice subscriptions', async () => {
+  const h = harness({ role: 'master' });
+  await h.join({ view: 'hub' });
+  assert.equal(h.channels.length, 1);
+  assert.equal(h.calls.some(call => ['campaign_notes', 'campaign_messages'].includes(call.table)), false);
+  assert.ok(h.calls.some(call => call.rpc === 'get_campaign_hub'));
+  assert.equal(h.calls.some(call => call.rpc === 'get_campaign'), false, 'Hub refreshes never download tabletop state or roll history');
+  const state = h.events.find(event => event.name === 'room:state').value.campaign.state;
+  assert.equal(state.tokens.length, 0);
+  assert.equal(state.rolls.length, 0);
+  assert.equal(Object.hasOwn(state, 'notes'), false);
+  assert.equal(h.channels[0].listeners.some(item => ['campaign_messages', 'campaign_rolls'].includes(item.filter.table)), false);
+  h.changeCampaign({ name: 'Campanha atualizada' });
+  h.channels[0].fire('postgres_changes', 'campaigns', { new: {} });
+  await settle();
+  assert.equal(h.events.filter(event => event.name === 'room:state').at(-1).value.campaign.name, 'Campanha atualizada');
+  assert.ok(h.events.some(event => event.name === 'campaign:updated'));
+  h.channels[0].status('CHANNEL_ERROR');
+  assert.equal(h.socket.connected, false);
+  assert.ok(h.events.some(event => event.name === 'disconnect'));
+  h.socket.disconnect();
+  assert.equal(h.channels[0].removed, true);
+});
+
+test('hub realtime leaves its private channel when membership is revoked', async () => {
+  const h = harness();
+  await h.join({ view: 'hub' });
+  h.failRpc({ code: '42501', message: 'Campanha não encontrada ou acesso não permitido.' });
+  h.channels[0].fire('postgres_changes', 'campaigns', { new: {} });
+  await settle();
+  assert.equal(h.socket.connected, false);
+  assert.equal(h.channels[0].removed, true);
+  assert.ok(h.events.some(event => event.name === 'app:error'));
 });

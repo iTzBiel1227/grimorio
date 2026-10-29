@@ -6,6 +6,7 @@
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
     const pdfPaths = new Map();
+    const campaignCoverUrls = new Map();
     const profileColumns = 'id,username,display_name,avatar_data,account_code,role,created_at';
     const fullProfileColumns = profileColumns + ',banner_data,bio';
     const entryColumns = 'id,kind,name,description,damage,image_data,is_standard';
@@ -38,7 +39,60 @@
     }
     function campaign(row) {
       return { id: row.id, code: row.code, name: row.name, systemName: row.system_name,
-        status: row.status, createdAt: row.created_at, state: row.state_json || { tokens: [], rolls: [] } };
+        status: row.status, createdAt: row.created_at, description: row.description || '',
+        recentSummary: row.recent_summary || '', nextSessionAt: row.next_session_at || null,
+        state: row.state_json || { tokens: [], rolls: [] } };
+    }
+    async function campaignCoverUrl(path) {
+      if (!path) return '';
+      const cached = campaignCoverUrls.get(path);
+      if (cached && cached.expires > Date.now()) return cached.url;
+      const signed = await result(client.storage.from('campaign-covers').createSignedUrl(path, 3600));
+      campaignCoverUrls.set(path, { url: signed.signedUrl, expires: Date.now() + 3000000 });
+      return signed.signedUrl;
+    }
+    async function campaignHub(code) {
+      const hub = await result(client.rpc('get_campaign_hub', { p_code: code }));
+      hub.campaign.coverUrl = '';
+      try { hub.campaign.coverUrl = await campaignCoverUrl(hub.campaign.coverPath); }
+      catch { hub.coverError = 'Não foi possível carregar a capa. Use Atualizar para tentar novamente.'; }
+      return hub;
+    }
+    async function requireCampaignMaster(code) {
+      const context = await result(client.rpc('get_campaign_hub', { p_code: code }));
+      if (context.role !== 'master') throw new Error('Somente o mestre pode gerenciar esta campanha.');
+      return context.campaign;
+    }
+    async function saveCampaignCover(code, value) {
+      // Both Storage policies and the metadata RPC verify ownership again.
+      const context = await campaignHub(code);
+      if (!context.permissions.canManage) throw new Error('Somente o mestre pode alterar a capa.');
+      const encoded = imageValue(value);
+      const oldPath = context.campaign.coverPath || '';
+      let path = '';
+      if (encoded) {
+        const match = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(encoded);
+        path = `${context.campaign.id}/${crypto.randomUUID()}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`;
+        const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
+        await result(client.storage.from('campaign-covers').upload(path, bytes, { contentType: `image/${match[1]}`, upsert: false }));
+      }
+      try {
+        await result(client.rpc('update_campaign_hub', { p_code: code, p_patch: { coverPath: path } }));
+      } catch (error) {
+        if (path) await client.storage.from('campaign-covers').remove([path]).catch(() => {});
+        throw error;
+      }
+      // Failure to clean an old file must not undo a successfully saved cover.
+      let warning = '';
+      if (oldPath && oldPath !== path) {
+        campaignCoverUrls.delete(oldPath);
+        try { await result(client.storage.from('campaign-covers').remove([oldPath])); }
+        catch { warning = 'Capa salva, mas não foi possível remover o arquivo anterior do armazenamento.'; }
+      }
+      let coverUrl = '';
+      try { coverUrl = await campaignCoverUrl(path); }
+      catch { warning = 'Capa salva. Não foi possível carregar a prévia; tente atualizar.'; }
+      return { coverUrl, warning };
     }
     async function session(required = true) {
       const data = await result(client.auth.getSession());
@@ -270,6 +324,31 @@
         return { campaigns: rows.map(row => ({ ...campaign(row), role: row.owner_user_id === uid ? 'master' : 'player', playerName: memberships.find(member => member.campaign_id === row.id)?.player_name || 'Mestre' })) };
       }
       if (path === '/api/campaigns' && method === 'POST') return result(client.rpc('create_campaign', { p_name: clean(body.name, 70) }));
+      if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/hub$/))) {
+        const code = decodeURIComponent(match[1]).toUpperCase();
+        if (method === 'GET') return campaignHub(code);
+        if (method === 'PUT') {
+          const patch = {};
+          for (const key of ['name', 'description', 'recentSummary', 'nextSessionAt']) {
+            if (Object.hasOwn(body, key)) patch[key] = body[key];
+          }
+          await result(client.rpc('update_campaign_hub', { p_code: code, p_patch: patch }));
+          return campaignHub(code);
+        }
+      }
+      if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/cover$/)) && method === 'PUT') {
+        return saveCampaignCover(decodeURIComponent(match[1]).toUpperCase(), body.imageData);
+      }
+      if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/notes$/)) && ['GET', 'PUT'].includes(method)) {
+        const context = await requireCampaignMaster(decodeURIComponent(match[1]).toUpperCase());
+        if (method === 'GET') {
+          const row = await result(client.from('campaign_notes').select('notes').eq('campaign_id', context.id).maybeSingle());
+          return { notes: row?.notes || '' };
+        }
+        if (typeof body.notes !== 'string' || body.notes.length > 10000) throw new Error('As notas devem ter até 10000 caracteres.');
+        await result(client.from('campaign_notes').upsert({ campaign_id: context.id, notes: body.notes }, { onConflict: 'campaign_id' }));
+        return { notes: body.notes };
+      }
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)$/)) && method === 'GET') return result(client.rpc('get_campaign', { p_code: decodeURIComponent(match[1]).toUpperCase() }));
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/join$/)) && method === 'POST') return result(client.rpc('join_campaign', { p_code: decodeURIComponent(match[1]).toUpperCase(), p_player_name: clean(body.playerName, 24) || 'Aventureiro' }));
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/members$/)) && method === 'GET') {
@@ -277,7 +356,9 @@
         return { members: context.members, status: context.info.campaign.status, maxPlayers: 10 };
       }
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/(start|lobby)$/)) && method === 'POST') {
-        await result(client.from('campaigns').update({ status: match[2] === 'start' ? 'session' : 'lobby' }).eq('code', decodeURIComponent(match[1]).toUpperCase()).eq('owner_user_id', uid).select('id').single()); return { ok: true };
+        const args = { p_code: decodeURIComponent(match[1]).toUpperCase() };
+        if (match[2] === 'start') args.p_title = body.title ?? '';
+        return result(client.rpc(match[2] === 'start' ? 'start_campaign_session' : 'end_campaign_session', args));
       }
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/sheets(?:\/([^/]+))?(\/assign)?$/))) {
         const context = await sheetContext(decodeURIComponent(match[1]).toUpperCase(), match[2]);

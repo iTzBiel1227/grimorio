@@ -21,4 +21,17 @@ assert.equal(profiles.error.code, '42501');
 assert.equal(campaign.error.code, '42501');
 assert.ifError(powers.error);
 assert.ok(powers.data.every(power=>power.is_standard), 'Anonymous readers must never see personal powers');
-console.log('Supabase remoto: catálogo, anúncio e biblioteca pública acessíveis; perfis, magias pessoais e campanhas protegidos.');
+// A missing migration returns PGRST202/42P01, not a permission error. Check
+// the new endpoints without creating accounts or changing campaign data.
+const hubChecks = await Promise.all([
+  client.rpc('get_campaign_hub', { p_code: '000000' }),
+  client.rpc('update_campaign_hub', { p_code: '000000', p_patch: {} }),
+  client.rpc('start_campaign_session', { p_code: '000000', p_title: '' }),
+  client.rpc('end_campaign_session', { p_code: '000000' }),
+  client.from('campaign_sessions').select('id').limit(1),
+]);
+for (const result of hubChecks) {
+  assert.ok(result.error, 'Anonymous visitors must not access the campaign hub or sessions');
+  assert.equal(result.error.code, '42501', 'The campaign hub migration must be installed and deny anonymous access');
+}
+console.log('Supabase remoto: catálogo, anúncio e biblioteca pública acessíveis; perfis, magias pessoais, Hub e sessões de campanha protegidos.');

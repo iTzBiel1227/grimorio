@@ -144,6 +144,33 @@ db.function('fold_name', value => String(value || '').normalize('NFD').replace(/
 const campaignColumns = db.prepare("PRAGMA table_info(campaigns)").all().map(c => c.name);
 if (!campaignColumns.includes("owner_user_id")) db.exec("ALTER TABLE campaigns ADD COLUMN owner_user_id TEXT");
 if (!campaignColumns.includes("status")) db.exec("ALTER TABLE campaigns ADD COLUMN status TEXT NOT NULL DEFAULT 'lobby'");
+if (!campaignColumns.includes('description')) db.exec("ALTER TABLE campaigns ADD COLUMN description TEXT NOT NULL DEFAULT '' CHECK(length(description)<=4000)");
+if (!campaignColumns.includes('recent_summary')) db.exec("ALTER TABLE campaigns ADD COLUMN recent_summary TEXT NOT NULL DEFAULT '' CHECK(length(recent_summary)<=4000)");
+if (!campaignColumns.includes('next_session_at')) db.exec('ALTER TABLE campaigns ADD COLUMN next_session_at TEXT');
+if (!campaignColumns.includes('cover_data')) db.exec("ALTER TABLE campaigns ADD COLUMN cover_data TEXT NOT NULL DEFAULT ''");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS campaign_sessions (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL CHECK(number > 0),
+    title TEXT NOT NULL CHECK(length(trim(title)) BETWEEN 1 AND 120),
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    CHECK(ended_at IS NULL OR ended_at >= started_at),
+    UNIQUE(campaign_id, number)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS campaign_sessions_one_active ON campaign_sessions(campaign_id) WHERE ended_at IS NULL;
+  CREATE INDEX IF NOT EXISTS campaign_sessions_history ON campaign_sessions(campaign_id, number DESC);
+`);
+// Existing active tables remain active. Their original start time was not stored;
+// initialize the history once, without fabricating a past session date.
+db.transaction(() => {
+  const active = db.prepare("SELECT id FROM campaigns c WHERE c.status='session' AND NOT EXISTS (SELECT 1 FROM campaign_sessions s WHERE s.campaign_id=c.id AND s.ended_at IS NULL)").all();
+  for (const campaign of active) {
+    const number = db.prepare('SELECT coalesce(max(number),0)+1 AS next FROM campaign_sessions WHERE campaign_id=?').get(campaign.id).next;
+    db.prepare('INSERT INTO campaign_sessions(id,campaign_id,number,title,started_at) VALUES(?,?,?,?,?)').run(randomUUID(),campaign.id,number,`Sessão ${number}`,new Date().toISOString());
+  }
+})();
 
 db.exec("CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
 // ADMIN_EMAIL can also designate an account that already exists.
@@ -240,9 +267,40 @@ function sheetResponse(row) {
   return {id:row.id,userId:row.user_id,name:row.name,data:JSON.parse(row.data_json),folderId:row.folder_id,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at};
 }
 function campaignAccess(code, uid) {
-  const row = findByCode.get(String(code).toUpperCase());
-  if (!row || !findMembership.get(row.id, uid)) return null;
+  const row = findByCode.get(String(code).trim().toUpperCase());
+  if (!row || (row.owner_user_id !== uid && !findMembership.get(row.id, uid))) return null;
   return row;
+}
+function campaignSessionResponse(row) {
+  return row ? { id:row.id, number:row.number, title:row.title, startedAt:row.started_at, endedAt:row.ended_at } : null;
+}
+function campaignHubResponse(row, uid) {
+  const isMaster = row.owner_user_id === uid;
+  const activeSession = campaignSessionResponse(db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? AND ended_at IS NULL').get(row.id));
+  const lastSession = campaignSessionResponse(db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? AND ended_at IS NOT NULL ORDER BY number DESC LIMIT 1').get(row.id));
+  const members = listCampaignMembers.all(row.id).map(member => ({...member,isMaster:!!member.isMaster}));
+  return {
+    campaign:{id:row.id,code:row.code,name:row.name,systemName:row.system_name,status:row.status||'lobby',createdAt:row.created_at,
+      description:row.description||'',coverUrl:row.cover_data||'',nextSessionAt:row.next_session_at||null,recentSummary:row.recent_summary||''},
+    role:isMaster?'master':'player', permissions:{canManage:isMaster,canViewPrivate:isMaster,canStartSession:isMaster&&!activeSession},
+    master:publicPerson(row.owner_user_id)||null,members,playerCount:members.filter(member=>!member.isMaster).length,maxPlayers:10,
+    activeSession,lastSession,sessions:db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? ORDER BY number DESC LIMIT 20').all(row.id).map(campaignSessionResponse)
+  };
+}
+function requireCampaignMaster(req, res) {
+  const row = campaignAccess(req.params.code,req.auth.userId);
+  if (!row || row.owner_user_id !== req.auth.userId) {
+    res.status(403).json({error:'Somente o mestre pode gerenciar esta campanha.'});
+    return null;
+  }
+  return row;
+}
+function notifyCampaign(row) {
+  // Signal only. Each client reloads its authorized Hub; never broadcast notes.
+  io.to([row.code, `hub:${row.code}`]).emit('campaign:updated',{code:row.code});
+}
+function notifyCampaignSheets(code) {
+  io.to([code, `hub:${code}`]).emit('sheet:list-changed');
 }
 function canAccessSheet(row, uid, campaign) {
   if (!row || !campaign || !findMembership.get(campaign.id, row.user_id)) return false;
@@ -251,7 +309,10 @@ function canAccessSheet(row, uid, campaign) {
 function notifySheet(row) {
   for (const socket of io.sockets.sockets.values()) {
     const campaign = campaignAccess(socket.data.code, socket.data.userId);
-    if (canAccessSheet(row, socket.data.userId, campaign)) socket.emit('sheet:updated', sheetResponse(row));
+    if (canAccessSheet(row, socket.data.userId, campaign)) {
+      if (socket.data.view === 'hub') socket.emit('sheet:list-changed');
+      else socket.emit('sheet:updated', sheetResponse(row));
+    }
   }
 }
 function saveSheetRequest(req,res,row) {
@@ -328,7 +389,17 @@ app.put("/api/sheets/:id", requireAuth, (req,res) => {
   const row=getSheet.get(req.params.id,req.auth.userId);
   saveSheetRequest(req,res,row);
 });
-app.delete("/api/sheets/:id", requireAuth, (req,res) => { deleteSheet.run(req.params.id,req.auth.userId); res.status(204).end(); });
+app.delete("/api/sheets/:id", requireAuth, (req,res) => {
+  const row=getSheet.get(req.params.id,req.auth.userId);
+  // Resolve recipients before cascading deletion removes sheet assignments.
+  const recipients=row?[...io.sockets.sockets.values()].filter(socket=>{
+    const campaign=campaignAccess(socket.data.code,socket.data.userId);
+    return canAccessSheet(row,socket.data.userId,campaign);
+  }):[];
+  deleteSheet.run(req.params.id,req.auth.userId);
+  for(const socket of recipients)socket.emit('sheet:list-changed');
+  res.status(204).end();
+});
 
 app.get('/api/sheet-folders',requireAuth,(req,res)=>res.json({folders:db.prepare('SELECT id,name,parent_id AS parentId,created_at AS createdAt FROM sheet_folders WHERE user_id=? ORDER BY name').all(req.auth.userId)}));
 app.post('/api/sheet-folders',requireAuth,(req,res)=>{
@@ -383,7 +454,8 @@ app.get("/api/campaigns/:code", requireAuth, (req, res) => {
   if (!row) return res.status(404).json({ error: "Sala não encontrada." });
   const membership = findMembership.get(row.id, req.auth.userId);
   const isOwner = row.owner_user_id === req.auth.userId;
-  res.json({ campaign: publicCampaign(row), role: isOwner ? "master" : (membership ? "player" : "guest"), playerName: membership?.player_name || "", masterKey: isOwner ? row.master_key : undefined });
+  const campaign = isOwner || membership ? publicCampaign(row) : {id:row.id,code:row.code,name:row.name,systemName:row.system_name,status:row.status||'lobby',createdAt:row.created_at};
+  res.json({ campaign, role: isOwner ? "master" : (membership ? "player" : "guest"), playerName: membership?.player_name || "", masterKey: isOwner ? row.master_key : undefined });
 });
 
 app.post("/api/campaigns/:code/join", requireAuth, (req, res) => {
@@ -395,12 +467,81 @@ app.post("/api/campaigns/:code/join", requireAuth, (req, res) => {
   const existing = findMembership.get(row.id, req.auth.userId);
   if (!existing && countCampaignMembers.get(row.id).total >= 10) return res.status(409).json({error:"Esta campanha já atingiu o limite de 10 participantes."});
   upsertMember.run(row.id, req.auth.userId, playerName, new Date().toISOString());
+  io.to(row.code).emit('campaign:members-changed');
+  notifyCampaignSheets(row.code);
+  notifyCampaign(row);
   res.json({ campaign: publicCampaign(row), role: "player", playerName });
 });
 
 app.get("/api/campaigns/:code/members", requireAuth, (req,res)=>{ const row=campaignAccess(req.params.code,req.auth.userId); if(!row)return res.status(403).json({error:"Entre na campanha para ver os participantes."}); res.json({members:listCampaignMembers.all(row.id),status:row.status||"lobby",maxPlayers:10}); });
-app.post("/api/campaigns/:code/start", requireAuth, (req,res)=>{ const row=findByCode.get(String(req.params.code).toUpperCase()); if(!row||row.owner_user_id!==req.auth.userId)return res.status(403).json({error:"Somente o mestre pode iniciar."}); db.prepare("UPDATE campaigns SET status='session' WHERE id=?").run(row.id); io.to(row.code).emit("campaign:started",{code:row.code}); res.json({ok:true}); });
-app.post("/api/campaigns/:code/lobby", requireAuth, (req,res)=>{ const row=findByCode.get(String(req.params.code).toUpperCase()); if(!row||row.owner_user_id!==req.auth.userId)return res.status(403).json({error:"Somente o mestre pode alterar o lobby."}); db.prepare("UPDATE campaigns SET status='lobby' WHERE id=?").run(row.id); res.json({ok:true}); });
+app.get('/api/campaigns/:code/hub',requireAuth,(req,res)=>{
+  const row=campaignAccess(req.params.code,req.auth.userId);
+  if(!row)return res.status(403).json({error:'Campanha indisponível. Entre como participante para abrir o Hub.'});
+  res.json(campaignHubResponse(row,req.auth.userId));
+});
+app.put('/api/campaigns/:code/hub',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  const body=req.body||{},name=body.name===undefined?row.name:body.name,description=body.description===undefined?row.description:body.description,recentSummary=body.recentSummary===undefined?row.recent_summary:body.recentSummary;
+  if(typeof name!=='string'||!name.trim()||name.trim().length>70||typeof description!=='string'||description.length>4000||typeof recentSummary!=='string'||recentSummary.length>4000)
+    return res.status(400).json({error:'Informe um nome de até 70 caracteres e descrição/resumo de até 4.000 caracteres.'});
+  let nextSessionAt=body.nextSessionAt===undefined?row.next_session_at:body.nextSessionAt;
+  if(nextSessionAt===null||nextSessionAt==='')nextSessionAt=null;
+  else {
+    const match=typeof nextSessionAt==='string'&&nextSessionAt.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/);
+    const timestamp=match?Date.parse(nextSessionAt):NaN;
+    if(!match||!Number.isFinite(timestamp)||+match[1]<1||+match[2]<1||+match[2]>12||+match[3]<1||+match[3]>new Date(Date.UTC(+match[1],+match[2],0)).getUTCDate())
+      return res.status(400).json({error:'Informe uma data válida com fuso horário para a próxima sessão.'});
+    nextSessionAt=new Date(timestamp).toISOString();
+  }
+  db.prepare('UPDATE campaigns SET name=?,description=?,recent_summary=?,next_session_at=? WHERE id=?').run(name.trim(),description.trim(),recentSummary.trim(),nextSessionAt,row.id);
+  const updated=findByCode.get(row.code);notifyCampaign(updated);res.json(campaignHubResponse(updated,req.auth.userId));
+});
+app.put('/api/campaigns/:code/cover',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  const imageData=req.body?.imageData;
+  if(typeof imageData!=='string'||!validImageUpload(imageData))return res.status(400).json({error:'Envie uma capa PNG, JPG ou WebP de até 3 MB.'});
+  db.prepare('UPDATE campaigns SET cover_data=? WHERE id=?').run(imageData,row.id);
+  notifyCampaign(row);res.json({coverUrl:imageData});
+});
+app.get('/api/campaigns/:code/notes',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  res.json({notes:JSON.parse(row.state_json).notes||''});
+});
+app.put('/api/campaigns/:code/notes',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  const notes=req.body?.notes;
+  if(typeof notes!=='string'||notes.length>10000)return res.status(400).json({error:'As notas devem conter até 10.000 caracteres.'});
+  saveState(row.code,{...JSON.parse(row.state_json),notes});
+  res.json({notes});
+});
+app.post('/api/campaigns/:code/start',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  const title=req.body?.title;
+  if(title!==undefined&&(typeof title!=='string'||title.trim().length>120))return res.status(400).json({error:'O título da sessão deve conter até 120 caracteres.'});
+  const session=db.transaction(()=>{
+    let active=db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? AND ended_at IS NULL').get(row.id);
+    if(!active){
+      const number=db.prepare('SELECT coalesce(max(number),0)+1 AS next FROM campaign_sessions WHERE campaign_id=?').get(row.id).next;
+      const id=randomUUID();
+      db.prepare('INSERT INTO campaign_sessions(id,campaign_id,number,title,started_at) VALUES(?,?,?,?,?)').run(id,row.id,number,title?.trim()||`Sessão ${number}`,new Date().toISOString());
+      active=db.prepare('SELECT * FROM campaign_sessions WHERE id=?').get(id);
+    }
+    db.prepare("UPDATE campaigns SET status='session' WHERE id=?").run(row.id);
+    return campaignSessionResponse(active);
+  })();
+  io.to(row.code).emit('campaign:started',{code:row.code});notifyCampaign(row);res.json({ok:true,session});
+});
+app.post('/api/campaigns/:code/lobby',requireAuth,(req,res)=>{
+  const row=requireCampaignMaster(req,res);if(!row)return;
+  const session=db.transaction(()=>{
+    const active=db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? AND ended_at IS NULL').get(row.id);
+    if(active)db.prepare('UPDATE campaign_sessions SET ended_at=max(?,started_at) WHERE id=?').run(new Date().toISOString(),active.id);
+    db.prepare("UPDATE campaigns SET status='lobby' WHERE id=?").run(row.id);
+    const last=active?db.prepare('SELECT * FROM campaign_sessions WHERE id=?').get(active.id):db.prepare('SELECT * FROM campaign_sessions WHERE campaign_id=? AND ended_at IS NOT NULL ORDER BY number DESC LIMIT 1').get(row.id);
+    return campaignSessionResponse(last);
+  })();
+  notifyCampaign(row);res.json({ok:true,session});
+});
 
 app.get('/api/friends',requireAuth,(req,res)=>{
   const uid=req.auth.userId;
@@ -465,7 +606,7 @@ app.post('/api/campaign-invites/:id/:action',requireAuth,(req,res)=>{
   const campaign=db.prepare('SELECT * FROM campaigns WHERE id=?').get(invite.campaign_id);
   if(action==='accept'&&!findMembership.get(campaign.id,req.auth.userId)&&countCampaignMembers.get(campaign.id).total>=10)return res.status(409).json({error:'Esta campanha já tem 10 participantes.'});
   db.transaction(()=>{if(action==='accept')upsertMember.run(campaign.id,req.auth.userId,publicPerson(req.auth.userId).displayName.slice(0,24)||'Aventureiro',new Date().toISOString());db.prepare('UPDATE campaign_invitations SET status=? WHERE id=?').run(action==='accept'?'accepted':'declined',invite.id);})();
-  io.to(campaign.code).emit('sheet:list-changed');io.to(campaign.code).emit('campaign:members-changed');res.json({ok:true,campaign:publicCampaign(campaign)});
+  notifyCampaignSheets(campaign.code);io.to(campaign.code).emit('campaign:members-changed');notifyCampaign(campaign);res.json({ok:true,campaign:publicCampaign(campaign)});
 });
 
 function entryResponse(row) {
@@ -621,7 +762,7 @@ app.put('/api/campaigns/:code/sheets/:sheetId/assign',requireAuth,(req,res)=>{
   if(!campaign||campaign.owner_user_id!==req.auth.userId||!canAccessSheet(row,req.auth.userId,campaign))return res.status(403).json({error:'Somente o mestre pode atribuir fichas desta campanha.'});
   if(req.body.userId&&!findMembership.get(campaign.id,req.body.userId))return res.status(400).json({error:'Escolha um participante da campanha.'});
   db.prepare('INSERT INTO campaign_sheet_assignments(campaign_id,sheet_id,assigned_user_id) VALUES(?,?,?) ON CONFLICT(campaign_id,sheet_id) DO UPDATE SET assigned_user_id=excluded.assigned_user_id').run(campaign.id,row.id,req.body.userId||null);
-  io.to(campaign.code).emit('sheet:list-changed');res.json({ok:true});
+  notifyCampaignSheets(campaign.code);res.json({ok:true});
 });
 app.get('/api/campaigns/:code/rolls',requireAuth,(req,res)=>{
   const campaign=campaignAccess(req.params.code,req.auth.userId);if(!campaign)return res.status(403).json({error:'Entre na campanha para ver as rolagens.'});
@@ -631,22 +772,24 @@ app.get('/api/campaigns/:code/rolls',requireAuth,(req,res)=>{
 });
 
 io.on("connection", socket => {
-  socket.on("room:join", ({ code, token } = {}) => {
+  socket.on("room:join", ({ code, token, view } = {}) => {
     const auth=getAuth({headers:{authorization:'Bearer '+(token||socket.handshake.auth?.token||'')}});
     if(!auth)return socket.emit('app:error','Entre na sua conta para abrir a mesa.');
     const row=campaignAccess(code,auth.userId);
     if(!row)return socket.emit('app:error','Entre nesta campanha antes de abrir a mesa.');
-    if(socket.data.code){const previous=socket.data.code;socket.leave(previous);io.to(previous).emit('room:players',getRoomPlayers(previous));}
-    const campaign = getCampaign(code);
+    if(socket.data.code){const previous=socket.data.code;socket.leave(previous);socket.leave(`hub:${previous}`);io.to(previous).emit('room:players',getRoomPlayers(previous));}
+    const hubOnly = view === 'hub';
+    const campaign = hubOnly ? {id:row.id,code:row.code,status:row.status||'lobby'} : getCampaign(code);
     if (!campaign) return socket.emit("app:error", "Não encontramos essa sala. Confira o código.");
     const safeName = row.owner_user_id===auth.userId?'Mestre':findMembership.get(row.id,auth.userId).player_name;
-    socket.data.userId=auth.userId;
-    socket.join(campaign.code); socket.data.code = campaign.code; socket.data.playerName = safeName;
-    socket.emit("room:state", { campaign: row.owner_user_id===auth.userId?{...campaign,state:{...campaign.state,notes:JSON.parse(row.state_json).notes||''}}:campaign, players: getRoomPlayers(campaign.code) });
+    socket.data.userId=auth.userId;socket.data.view=hubOnly?'hub':'table';
+    socket.join(hubOnly?`hub:${campaign.code}`:campaign.code); socket.data.code = campaign.code; socket.data.playerName = safeName;
+    socket.emit("room:state", { campaign: row.owner_user_id===auth.userId&&!hubOnly?{...campaign,state:{...campaign.state,notes:JSON.parse(row.state_json).notes||''}}:campaign, players: hubOnly?[]:getRoomPlayers(campaign.code) });
+    if(hubOnly)return;
     io.to(campaign.code).emit("room:players", getRoomPlayers(campaign.code));
     socket.to(campaign.code).emit("room:notice", `${safeName} entrou na mesa.`);
   });
-  socket.on('room:leave',()=>{const code=socket.data.code;if(code){socket.leave(code);socket.data.code=null;io.to(code).emit('room:players',getRoomPlayers(code));}});
+  socket.on('room:leave',()=>{const code=socket.data.code;if(code){socket.leave(code);socket.leave(`hub:${code}`);socket.data.code=null;if(socket.data.view!=='hub')io.to(code).emit('room:players',getRoomPlayers(code));}});
   socket.on("token:move", ({ tokenId, x, y } = {}) => {
     const code = socket.data.code; if (!code || typeof tokenId !== "string") return;
     if(!campaignAccess(code,socket.data.userId))return;
@@ -677,7 +820,7 @@ io.on("connection", socket => {
     socket.emit("room:state", { campaign, players: getRoomPlayers(code) }); socket.emit("room:notice", "Anotações salvas.");
   });
   socket.on("session:chat", ({body,recipientSocketId}={})=>{ const code=socket.data.code; const text=String(body||'').trim().slice(0,1000); if(!code||!text||!campaignAccess(code,socket.data.userId))return; if(recipientSocketId&&!getRoomPlayers(code).some(player=>player.id===recipientSocketId))return socket.emit('app:error','Escolha alguém desta mesa.');const msg={id:randomUUID(),sender:socket.data.playerName||'Aventureiro',body:text,at:new Date().toISOString(),private:!!recipientSocketId}; if(recipientSocketId){socket.emit('session:message',msg);io.to(recipientSocketId).emit('session:message',msg)}else io.to(code).emit('session:message',msg); });
-  socket.on("disconnect", () => { const code = socket.data.code; if (code) io.to(code).emit("room:players", getRoomPlayers(code)); });
+  socket.on("disconnect", () => { const code = socket.data.code; if (code&&socket.data.view!=='hub') io.to(code).emit("room:players", getRoomPlayers(code)); });
 });
 
 function getRoomPlayers(code) {
