@@ -1,6 +1,6 @@
 # Grimório — expansão de campanhas
 
-Escopo desta entrega: **Fase 1 — Hub, permissões e Modo Mestre**. As fases 2 a 7 permanecem planejadas. O pedido final limita esta implementação à primeira fase.
+Entregues: **Fase 1 — Hub, permissões e Modo Mestre** e **Fase 2 — NPCs, relações e mapa interativo**, autorizada na continuação do projeto. As fases 3 a 7 permanecem planejadas. Este documento conserva os detalhes da Fase 1; a [documentação da Fase 2](docs/mundo-da-campanha.md) registra os novos recursos, banco e validações.
 
 ## Análise do projeto e plano técnico
 
@@ -120,7 +120,7 @@ Os advisors do Supabase não apontaram novos problemas de segurança após a mig
 
 ## Funcionalidades pendentes
 
-- Fase 2: NPCs públicos/privados, relações e mapa interativo. As áreas são identificadas no Hub como futuras.
+- Fase 2 concluída: NPCs públicos/privados, relações e mapa interativo estão nas abas do Hub. Consulte [Mundo da campanha](docs/mundo-da-campanha.md).
 - Fase 3: recursos/transações de conjuração e inventários compartilhados. A biblioteca/importação de magias existente permanece.
 - Fase 4: participantes/eventos associados à sessão, combate, iniciativa, HP/condições e fundação de crônicas. A sessão mínima desta entrega não implementa essas funcionalidades.
 - Fase 5: evolução das rolagens contextuais/secretas. Dados 3D e histórico já existentes foram preservados.
@@ -131,6 +131,6 @@ Os advisors do Supabase não apontaram novos problemas de segurança após a mig
 
 ## Próxima fase
 
-Fase 2: revisar novamente as tabelas atuais; criar NPCs e segredos em estruturas com autorização distinta; integrar relações e marcadores à campanha e às fichas existentes. Não implementar NPCs, relações ou mapa antes de validar e concluir a Fase 1.
+Fase 3: recursos/transações de conjuração e inventários compartilhados. Antes de implementar, revisar novamente as fichas, magias e atribuições existentes para preservar seus dados e permissões.
 
 Para executar localmente, reinicie o servidor atualizado com `npm.cmd start`. Para gerar a publicação, use `npm.cmd run build`. As migrations versionadas são a fonte das mudanças no Supabase; não são necessárias edições manuais de tabelas pelo Dashboard.

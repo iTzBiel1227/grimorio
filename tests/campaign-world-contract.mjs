@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+
+export const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZxkAAAAASUVORK5CYII=';
+export async function checkWorld(h) {
+  const [master,player,other,admin]=h.users;
+  const c=await h.create(master,'Mundo de teste'), foreign=await h.create(other,'Outra campanha');
+  await h.join(player,c.code);await h.join(admin,c.code);
+  const read=(u=master)=>h.read(u,c.code);
+  const save=(kind,data,item=null,u=master,code=c.code)=>h.write(u,code,{kind,action:'save',data,...(item?{id:item.id,expectedVersion:item.version}:{})});
+  const del=(kind,item,u=master)=>h.write(u,c.code,{kind,action:'delete',id:item.id,expectedVersion:item.version});
+  for(const u of [null,other])await assert.rejects(read(u));
+  for(const u of [player,other,admin,null])await assert.rejects(save('npc',{name:'Invasão',isPublic:true},null,u));
+  assert.equal((await read(player)).canManage,false);assert.equal((await read(admin)).canManage,false);
+  assert.deepEqual((await read()).map,{title:'Mapa da campanha',imageData:'',version:0});
+  const masterSheet=await h.sheet(master,'Ficha secreta'), playerSheet=await h.sheet(player,'Heroína');
+  const outsiderSheet=await h.sheet(other,'Outra ficha');
+  let hidden=await save('npc',{name:'Inimigo oculto',secret:'SEGREDO NPC'});
+  let known=await save('npc',{name:'Aliado público',description:'Guia do porto',isPublic:true,linkedSheetId:masterSheet.id,secret:'SEGREDO ALIADO'});
+  const another=await save('npc',{name:'Mercadora',isPublic:true,linkedSheetId:playerSheet.id});
+  const foreignNpc=await save('npc',{name:'NPC externo'},null,other,foreign.code);
+  let view=await read(player);assert.equal(view.npcs.length,2);
+  assert.equal(view.npcs.find(n=>n.id===known.id).linkedSheetId,null);
+  assert.equal(view.npcs.find(n=>n.id===another.id).linkedSheetId,playerSheet.id);
+  assert.ok(!JSON.stringify(view).includes('SEGREDO'));assert.ok(view.npcs.every(n=>!Object.hasOwn(n,'secret')));
+  assert.equal((await read()).npcs.find(n=>n.id===known.id).secret,'SEGREDO ALIADO');
+  await assert.rejects(save('npc',{name:'Tentativa',linkedSheetId:outsiderSheet.id}));
+  for(const data of [{name:''},{name:123},{name:'n',isPublic:'false'},{name:'n',secret:null},{name:'n',description:'x'.repeat(4001)},{name:'n',secret:'x'.repeat(10001)},{name:'n',owner_user_id:other.id}])await assert.rejects(save('npc',data));
+  await assert.rejects(save('npc',{name:'Ataque'},foreignNpc));
+  const relation=await save('relation',{fromNpcId:known.id,toNpcId:another.id,label:'Aliados',isPublic:true});
+  await save('relation',{fromNpcId:known.id,toNpcId:hidden.id,label:'Rival oculto',isPublic:true});
+  const sheetRelation=await save('relation',{fromNpcId:known.id,toSheetId:masterSheet.id,label:'Protege',isPublic:true});
+  assert.equal((await read(player)).relations.length,1);
+  for(const data of [{fromNpcId:known.id,toNpcId:known.id,label:'Eu'},{fromNpcId:known.id,toNpcId:foreignNpc.id,label:'Externo'},
+    {fromNpcId:known.id,toSheetId:outsiderSheet.id,label:'Externo'}, {fromNpcId:known.id,toNpcId:another.id,toSheetId:playerSheet.id,label:'Dois'}, {fromNpcId:known.id,label:'Nenhum'}])await assert.rejects(save('relation',data));
+  await h.assign(master,c.code,masterSheet.id,player.id);
+  view=await read(player);assert.equal(view.npcs.find(n=>n.id===known.id).linkedSheetId,masterSheet.id);
+  assert.equal(view.relations.find(r=>r.id===sheetRelation.id).toSheetName,'Ficha secreta');
+  await h.assign(master,c.code,masterSheet.id,null);assert.equal((await read(player)).relations.length,1);
+  const pin=await save('marker',{name:'Porto',x:23.5,y:80,isPublic:true,npcId:known.id,secret:'SEGREDO LOCAL'});
+  const hiddenPin=await save('marker',{name:'Covil',x:50,y:50,isPublic:true,npcId:hidden.id});
+  await save('marker',{name:'Armadilha',x:2,y:3});
+  view=await read(player);assert.equal(view.markers.length,1);assert.equal(view.markers[0].x,23.5);assert.equal(Object.hasOwn(view.markers[0],'secret'),false);
+  for(const data of [{name:'n',x:-1,y:0},{name:'n',x:101,y:0},{name:'n',x:'20',y:0},{name:'n',x:null,y:0},{name:'n',x:1,y:2,npcId:foreignNpc.id}])await assert.rejects(save('marker',data));
+  await assert.rejects(h.write(master,c.code,{kind:'map',action:'save',data:{title:'Mapa',imageData:png}}));
+  const map=await h.write(master,c.code,{kind:'map',action:'save',expectedVersion:0,data:{title:'Costa de Valenne',imageData:png}});
+  assert.equal((await read(player)).map.imageData,png);
+  for(const imageData of ['https://example.test/map.png','data:image/svg+xml;base64,PHN2Zz4=','data:image/png;base64,YmFk',null])await assert.rejects(save('map',{title:'Mapa',imageData},map));
+  await assert.rejects(del('map',map));
+  const updated=await save('npc',{name:'Novo aliado'},known);
+  await assert.rejects(save('npc',{name:'Sobrescrita'},known),e=>e.status===409||e.code==='40001');
+  await assert.rejects(del('npc',known),e=>e.status===409||e.code==='40001');known=updated;
+  const results=await Promise.allSettled([save('npc',{name:'Janela A'},known),save('npc',{name:'Janela B'},known)]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  known=results.find(r=>r.status==='fulfilled').value;
+  assert.equal((await read()).npcs.find(n=>n.id===known.id).secret,'SEGREDO ALIADO','Partial public edits preserve private notes');
+  hidden=await save('npc',{isPublic:true},hidden);assert.equal((await read(player)).markers.length,2);
+  hidden=await save('npc',{isPublic:false},hidden);assert.equal((await read(player)).markers.length,1);
+  await del('npc',hidden);view=await read();assert.ok(!view.markers.some(m=>m.id===hiddenPin.id));assert.equal(view.relations.length,2);
+  await h.deleteSheet(master,masterSheet.id);view=await read();assert.equal(view.npcs.find(n=>n.id===known.id).linkedSheetId,null);assert.equal(view.relations.length,1);
+  await del('relation',relation);await del('marker',pin);
+  assert.equal((await read()).relations.length,0);assert.equal((await read(player)).markers.length,0);
+  if(h.checkRaw)await h.checkRaw(c,player,master);
+  if(h.restart){await h.restart();assert.equal((await read(player)).map.title,'Costa de Valenne');assert.equal((await read()).npcs.find(n=>n.id===known.id).secret,'SEGREDO ALIADO');}
+  const count=(await read()).npcs.length;
+  for(let index=count;index<200;index++)await save('npc',{name:'Extra '+index});
+  await assert.rejects(save('npc',{name:'Acima do limite'}));
+  assert.equal((await read()).npcs.length,200);
+}

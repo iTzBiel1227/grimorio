@@ -249,6 +249,8 @@
           })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_sheet_assignments', filter: `campaign_id=eq.${campaign.id}` },
           () => {if(isCurrent(version))dispatch('sheet:list-changed');});
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_world_versions', filter: `campaign_id=eq.${campaign.id}` },
+        () => { if (isCurrent(version)) dispatch('campaign:world-changed', { code: campaign.code }); });
       if (!hubOnly) {
         channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'campaign_messages', filter: `campaign_id=eq.${campaign.id}` },
           event => receiveMessage(event.new, version));

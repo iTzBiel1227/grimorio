@@ -14,6 +14,7 @@
   const allowed = key => Boolean(info?.permissions?.[key]);
   const tableUrl = () => `/${info?.activeSession ? 'sessao' : 'lobby'}.html?code=${encodeURIComponent(code)}`;
   const campaignUrl = suffix => `/api/campaigns/${encodeURIComponent(code)}/${suffix}`;
+  const world = window.GrimorioCampaignWorld.create({ code, onAccessDenied: unavailable });
   function hidePrivate() {
     masterMode = false; notesDirty = false; notesLoaded = false; notesRevision++;
     el('hubNotes').value = ''; el('hubNotes').disabled = true; el('hubSaveNotes').disabled = true; el('hubPrivate').hidden = true;
@@ -21,6 +22,7 @@
   }
   function unavailable(error) {
     info = null; hidePrivate();
+    world.clear();
     el('hubContent').hidden = true; el('hubLoading').hidden = true; el('hubUnavailable').hidden = false;
     el('hubUnavailableMessage').textContent = error.message || 'Confira o convite ou tente novamente.';
     el('hubConnection').textContent = 'Campanha indisponível';
@@ -29,6 +31,7 @@
     socket?.disconnect(); socket = null;
   }
   function render() {
+    world.setContext(info);
     const { campaign, members = [], master, activeSession, lastSession, sessions = [] } = info;
     document.title = `${campaign.name} — Grimório`;
     el('hubName').textContent = campaign.name;
@@ -96,7 +99,9 @@
     current.on('connect', join);
     current.on('room:state', () => { el('hubConnection').textContent = 'Campanha conectada'; scheduleRefresh(); });
     for (const event of ['campaign:updated', 'campaign:started', 'campaign:members-changed']) current.on(event, scheduleRefresh);
-    current.on('sheet:list-changed', () => { charactersLoaded = false; if (activeTab === 'characters') loadCharacters(); });
+    current.on('campaign:world-changed', () => world.invalidate());
+    current.on('campaign:members-changed', () => world.invalidate({ sheets: true }));
+    current.on('sheet:list-changed', () => { world.invalidate({ sheets: true }); charactersLoaded = false; if (activeTab === 'characters') loadCharacters(); });
     current.on('disconnect', () => { el('hubConnection').textContent = 'Conexão interrompida · tentando reconectar'; });
     current.on('connect_error', () => { el('hubConnection').textContent = 'Sem conexão ao vivo · use Atualizar para tentar novamente'; });
     current.on('app:error', message => { feedback('hubFeedback', String(message), true); el('hubConnection').textContent = 'Atualizações ao vivo indisponíveis'; });
@@ -118,6 +123,7 @@
   }
   function selectTab(tab) {
     activeTab = tab;
+    world.selectTab(tab);
     document.querySelectorAll('[data-hub-tab]').forEach(button => { if (button.dataset.hubTab === tab) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
     document.querySelectorAll('[data-hub-panel]').forEach(panel => { panel.hidden = panel.dataset.hubPanel !== tab; });
     if (tab === 'characters') loadCharacters();
@@ -125,7 +131,7 @@
   document.querySelectorAll('[data-hub-tab]').forEach(button => { button.onclick = () => selectTab(button.dataset.hubTab); });
   el('hubPeople').onclick = () => { if (info) window.GrimorioCampaignPeople.open({ code, name: info.campaign.name, canInvite: allowed('canManage') }); };
   el('hubRetry').onclick = () => { el('hubLoading').hidden = false; el('hubUnavailable').hidden = true; refresh(); };
-  el('hubRefresh').onclick = async () => { el('hubRefresh').disabled = true; feedback('hubFeedback'); charactersLoaded = false; await refresh(); if (activeTab === 'characters') await loadCharacters(); el('hubRefresh').disabled = false; };
+  el('hubRefresh').onclick = async () => { el('hubRefresh').disabled = true; feedback('hubFeedback'); charactersLoaded = false; world.invalidate({ sheets: true }); await refresh(); await world.refresh(); if (activeTab === 'characters') await loadCharacters(); el('hubRefresh').disabled = false; };
   async function loadNotes() {
     if (!allowed('canViewPrivate') || !masterMode) return;
     const revision = ++notesRevision;
@@ -210,12 +216,12 @@
     catch (error) { feedback('hubEndFeedback', error.message, true); }
     finally { sessionBusy = false; el('hubConfirmEnd').disabled = false; if (info) render(); }
   };
-  const onFocus = () => { charactersLoaded = false; scheduleRefresh(); if (activeTab === 'characters') loadCharacters(); };
+  const onFocus = () => { world.invalidate({ sheets: true }); charactersLoaded = false; scheduleRefresh(); if (activeTab === 'characters') loadCharacters(); };
   window.addEventListener('focus', onFocus);
-  window.addEventListener('pagehide', () => { disposed = true; notesRevision++; clearTimeout(refreshTimer); window.removeEventListener('focus', onFocus); socket?.emit('room:leave'); socket?.disconnect(); socket = null; });
+  window.addEventListener('pagehide', () => { world.suspend(); disposed = true; notesRevision++; clearTimeout(refreshTimer); window.removeEventListener('focus', onFocus); socket?.emit('room:leave'); socket?.disconnect(); socket = null; });
   window.addEventListener('pageshow', event => {
     if (!event.persisted) return;
-    disposed = false; window.addEventListener('focus', onFocus); onFocus();
+    disposed = false; world.resume(); window.addEventListener('focus', onFocus); onFocus();
     if (masterMode && !notesDirty) loadNotes();
   });
   if (!/^[A-F0-9]{6}$/.test(code)) { unavailable(new Error('O código da campanha é inválido. Abra uma campanha pela sua lista.')); return; }

@@ -29,9 +29,14 @@ const hubChecks = await Promise.all([
   client.rpc('start_campaign_session', { p_code: '000000', p_title: '' }),
   client.rpc('end_campaign_session', { p_code: '000000' }),
   client.from('campaign_sessions').select('id').limit(1),
+  client.rpc('get_campaign_world', { p_code: '000000' }),
+  client.rpc('mutate_campaign_world', { p_code: '000000', p_kind: 'npc', p_action: 'save', p_data: { name: 'Blocked' } }),
+  client.from('campaign_npc_secrets').select('npc_id').limit(1),
+  client.from('campaign_marker_secrets').select('marker_id').limit(1),
+  client.from('campaign_world_versions').select('campaign_id').limit(1),
 ]);
 for (const result of hubChecks) {
   assert.ok(result.error, 'Anonymous visitors must not access the campaign hub or sessions');
   assert.equal(result.error.code, '42501', 'The campaign hub migration must be installed and deny anonymous access');
 }
-console.log('Supabase remoto: catálogo, anúncio e biblioteca pública acessíveis; perfis, magias pessoais, Hub e sessões de campanha protegidos.');
+console.log('Supabase remoto: conteúdo público acessível; perfis, Hub, sessões, NPCs, locais e segredos protegidos.');

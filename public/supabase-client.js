@@ -324,6 +324,21 @@
         return { campaigns: rows.map(row => ({ ...campaign(row), role: row.owner_user_id === uid ? 'master' : 'player', playerName: memberships.find(member => member.campaign_id === row.id)?.player_name || 'Mestre' })) };
       }
       if (path === '/api/campaigns' && method === 'POST') return result(client.rpc('create_campaign', { p_name: clean(body.name, 70) }));
+      if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/world$/))) {
+        const code = decodeURIComponent(match[1]).trim().toUpperCase();
+        if (method === 'GET') return result(client.rpc('get_campaign_world', { p_code: code }));
+        if (method === 'POST') {
+          const data = body.data ?? {};
+          if (body.kind === 'map' && Object.hasOwn(data, 'imageData')) imageValue(data.imageData);
+          try {
+            return await result(client.rpc('mutate_campaign_world', { p_code: code, p_kind: body.kind,
+              p_action: body.action, p_id: body.id ?? null, p_data: data, p_expected_version: body.expectedVersion ?? null }));
+          } catch (error) {
+            if (error.code === '40001') error.message = 'Este registro mudou em outra janela. Recarregue os dados e revise suas alterações antes de salvar.';
+            throw error;
+          }
+        }
+      }
       if ((match = path.match(/^\/api\/campaigns\/([^/]+)\/hub$/))) {
         const code = decodeURIComponent(match[1]).toUpperCase();
         if (method === 'GET') return campaignHub(code);

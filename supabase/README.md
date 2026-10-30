@@ -8,6 +8,8 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 
 `campaign_hub` acrescenta descrição, resumo público, próxima sessão, capas privadas e o histórico mínimo de encontros da campanha. As RPCs conferem membro/proprietário no banco; notas privadas continuam na tabela existente. A [documentação da Fase 1](../GRIMORIO_EXPANSAO.md) descreve o modelo, a adaptação de campanhas legadas e as limitações desta entrega.
 
+`campaign_world` acrescenta NPCs, relações, mapa e locais, com segredos separados e controle de versão. O acesso aos dados passa por RPCs autorizadas, sem SELECT/escrita direta do navegador nas tabelas. Só o sinal pequeno de versão entra no Realtime. Consulte [Mundo da campanha](../docs/mundo-da-campanha.md).
+
 ## Estrutura
 
 | Área | Tabelas / serviço |
@@ -21,6 +23,10 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 | Magias e habilidades | `grimoire_entries` |
 | Campanhas, tabuleiro e últimas rolagens | `campaigns` |
 | Número, título, início e término dos encontros | `campaign_sessions` |
+| NPCs e seus segredos separados | `campaign_npcs`, `campaign_npc_secrets` |
+| Relações de NPCs com NPCs/fichas | `campaign_relations` |
+| Mapa compartilhado e locais | `campaign_maps`, `campaign_markers` |
+| Segredos dos locais e sinal de atualização | `campaign_marker_secrets`, `campaign_world_versions` |
 | Participantes e nome na mesa | `campaign_members` |
 | Convites de amigos para campanhas | `campaign_invitations` |
 | Anotações privadas do mestre | `campaign_notes` |
@@ -35,7 +41,7 @@ A migração inicial `grimorio` cria contas de perfil, fichas, conteúdo e campa
 | PDFs de até 20 MB | Bucket `book-pdfs` |
 | Capas privadas de campanha de até 3 MiB | Bucket `campaign-covers` |
 
-As 19 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs, os poderes publicados e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
+As 26 tabelas públicas de aplicação têm RLS. Visitantes podem ler o catálogo, os PDFs, os poderes publicados e o conteúdo da página inicial. Dados pessoais e ações de escrita exigem as permissões correspondentes.
 
 ## Contas, identidade e administração
 

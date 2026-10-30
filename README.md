@@ -10,6 +10,8 @@ A [atualização de perfil, biblioteca e dados 3D](docs/perfil-biblioteca-dados.
 
 A [Fase 1 da expansão de campanhas](GRIMORIO_EXPANSAO.md) documenta o Hub, as permissões, o Modo Mestre e o histórico de sessões.
 
+A [Fase 2 — Mundo da campanha](docs/mundo-da-campanha.md) acrescenta NPCs, relações com personagens e mapa interativo com locais públicos/privados.
+
 ## Executar localmente
 
 Use Node.js 22 ou superior:
@@ -43,7 +45,9 @@ O lobby distingue participantes cadastrados de pessoas conectadas: os indicadore
 
 Criar, entrar por código ou abrir uma campanha leva ao **Hub da campanha**, em `/campanha-hub.html?code=CODIGO`. A visão geral reúne capa, descrição, participantes, resumo público e próxima sessão. As abas **Personagens** e **Sessões** mostram as fichas autorizadas e os últimos 20 encontros. **Entrar na mesa** mantém o acesso ao lobby e à sessão existentes.
 
-Somente o mestre gerencia os dados e a capa, inicia ou encerra sessões e ativa o **Modo Mestre** para consultar e salvar notas privadas. Encerrar exige confirmação; continuar reutiliza a sessão ativa. Ser administrador global não concede essas permissões em campanhas de outras pessoas. As próximas fases da expansão continuam planejadas.
+Somente o mestre gerencia os dados e a capa, inicia ou encerra sessões e ativa o **Modo Mestre** para consultar e salvar notas privadas. Encerrar exige confirmação; continuar reutiliza a sessão ativa. Ser administrador global não concede essas permissões em campanhas de outras pessoas.
+
+Em **NPCs**, o Mestre cria personagens privados ou compartilhados, guarda segredos e vincula fichas mantendo suas permissões. **Relações** conecta NPCs entre si ou com fichas da companhia. **Mapa** aceita uma imagem PNG/JPG/WebP de até 3 MiB e permite explorar, criar e reposicionar locais com zoom e coordenadas. NPCs e locais novos são privados; segredos nunca são enviados aos jogadores. Edições simultâneas são recusadas quando a versão está desatualizada, preservando o rascunho. As fases 3 a 7 continuam planejadas.
 
 ## Fichas, biblioteca e mesa
 

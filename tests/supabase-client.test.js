@@ -110,6 +110,20 @@ test('a temporary Storage signing failure keeps the campaign hub usable', async 
   assert.match(hub.coverError, /capa/);
 });
 
+test('campaign world uses authorized RPCs, preserves versions and rejects invalid map images', async () => {
+  const h = harness({ respond: call => ({ data: call.name === 'get_campaign_world' ? { canManage: false, npcs: [], relations: [], markers: [] } : { id: 'npc-one', version: 2 } }) });
+  assert.equal((await h.adapter.request('/api/campaigns/abc123/world')).canManage, false);
+  await h.adapter.request('/api/campaigns/abc123/world', { method: 'POST', body: { kind: 'npc', action: 'save', id: 'npc-one', expectedVersion: 1, data: { name: 'Arconte', secret: 'Somente Mestre' }, role: 'admin' } });
+  assert.deepEqual(h.calls[1].args, { p_code: 'ABC123', p_kind: 'npc', p_action: 'save', p_id: 'npc-one', p_data: { name: 'Arconte', secret: 'Somente Mestre' }, p_expected_version: 1 });
+  await assert.rejects(h.adapter.request('/api/campaigns/ABC123/world', { method: 'POST', body: { kind: 'map', action: 'save', data: { imageData: 'https://example.test/map.svg' } } }), /imagem/);
+  assert.equal(h.calls.length, 2);
+  const stale = harness({ respond: () => ({ error: { code: '40001' } }) });
+  await assert.rejects(stale.adapter.request('/api/campaigns/ABC123/world', { method: 'POST', body: { kind: 'marker', action: 'delete', id: 'pin', expectedVersion: 1 } }), error => error.status === 409 && /registro mudou/.test(error.message));
+  const guest = harness({ authSession: null });
+  await assert.rejects(guest.adapter.request('/api/campaigns/ABC123/world'), error => error.status === 401);
+  assert.equal(guest.calls.length, 0);
+});
+
 test('email-confirmation signup never invents a session and guests get a login status for protected data', async () => {
   const { adapter } = harness({ authSession: null });
   const registered=await adapter.request('/api/auth/register', { method: 'POST', body: JSON.stringify({ username:'adventurer',birthDate:'2000-01-01',email: 'a@example.test', password: 'password' }) });

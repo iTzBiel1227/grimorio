@@ -12,7 +12,7 @@
     "test:api": "node tests/api-smoke.mjs",
     "test:content": "node tests/content-api.mjs",
     "test:friends": "node tests/friends-api.mjs",
-    "test:e2e": "node scripts/build-dice.mjs && node tests/community-e2e.mjs && node tests/dice-visuals.mjs",
+    "test:e2e": "node scripts/build-dice.mjs && node tests/community-e2e.mjs && node tests/campaign-world-e2e.mjs && node tests/dice-visuals.mjs",
     "test:supabase:remote": "node scripts/check-supabase.mjs",
     "sync": "node scripts/sync-github.mjs",
     "prestart": "node scripts/build-dice.mjs",

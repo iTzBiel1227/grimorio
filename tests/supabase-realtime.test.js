@@ -100,7 +100,7 @@ function harness(options = {}) {
   const window = { GrimorioSupabase: { client }, addEventListener() {} };
   vm.runInNewContext(source, { window });
   const socket = window.io();
-  for (const name of ['app:error', 'room:state', 'room:players', 'dice:result', 'session:message', 'campaign:updated', 'disconnect']) {
+  for (const name of ['app:error', 'room:state', 'room:players', 'dice:result', 'session:message', 'campaign:updated', 'campaign:world-changed', 'disconnect']) {
     socket.on(name, value => events.push({ name, value }));
   }
   return {
@@ -111,6 +111,17 @@ function harness(options = {}) {
     async join(payload = {}) { socket.emit('room:join', { code: 'abc123', ...payload }); await settle(); }
   };
 }
+
+test('world realtime emits only an invalidation and ignores events after leaving', async () => {
+  const h = harness(); await h.join({ view: 'hub' });
+  const channel = h.channels[0];
+  assert.equal(channel.listeners.filter(item => item.filter.table === 'campaign_world_versions').length, 1);
+  assert.equal(channel.listeners.some(item => /campaign_(npcs|markers|maps|.*secrets)/.test(item.filter.table || '')), false);
+  channel.fire('postgres_changes', 'campaign_world_versions', { new: { campaign_id: 'campaign-one', version: 2, secret: 'Never forward payloads' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(h.events.filter(event => event.name === 'campaign:world-changed'))), [{ name: 'campaign:world-changed', value: { code: 'ABC123' } }]);
+  h.socket.disconnect(); channel.fire('postgres_changes', 'campaign_world_versions', { new: { version: 3 } });
+  assert.equal(h.events.filter(event => event.name === 'campaign:world-changed').length, 1);
+});
 
 test('realtime requires an authenticated campaign member before opening a private channel', async () => {
   for (const options of [{ signedOut: true }, { role: 'guest' }]) {

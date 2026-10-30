@@ -173,6 +173,41 @@ db.transaction(() => {
 })();
 
 db.exec("CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS campaign_npcs (
+    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', is_public INTEGER NOT NULL DEFAULT 0,
+    linked_sheet_id TEXT REFERENCES character_sheets(id) ON DELETE SET NULL, version INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE INDEX IF NOT EXISTS campaign_npcs_campaign ON campaign_npcs(campaign_id);
+  CREATE INDEX IF NOT EXISTS campaign_npcs_sheet ON campaign_npcs(linked_sheet_id);
+  CREATE TABLE IF NOT EXISTS campaign_npc_secrets (npc_id TEXT PRIMARY KEY REFERENCES campaign_npcs(id) ON DELETE CASCADE, secret TEXT NOT NULL DEFAULT '');
+  CREATE TABLE IF NOT EXISTS campaign_relations (
+    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    from_npc_id TEXT NOT NULL REFERENCES campaign_npcs(id) ON DELETE CASCADE,
+    to_npc_id TEXT REFERENCES campaign_npcs(id) ON DELETE CASCADE,
+    to_sheet_id TEXT REFERENCES character_sheets(id) ON DELETE CASCADE,
+    label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', is_public INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1, CHECK((to_npc_id IS NULL) <> (to_sheet_id IS NULL)), CHECK(from_npc_id <> to_npc_id)
+  );
+  CREATE INDEX IF NOT EXISTS campaign_relations_campaign ON campaign_relations(campaign_id);
+  CREATE INDEX IF NOT EXISTS campaign_relations_from ON campaign_relations(from_npc_id);
+  CREATE INDEX IF NOT EXISTS campaign_relations_to ON campaign_relations(to_npc_id);
+  CREATE INDEX IF NOT EXISTS campaign_relations_sheet ON campaign_relations(to_sheet_id);
+  CREATE TABLE IF NOT EXISTS campaign_maps (
+    campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT 'Mapa da campanha', image_data TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE TABLE IF NOT EXISTS campaign_markers (
+    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', x REAL NOT NULL, y REAL NOT NULL,
+    npc_id TEXT REFERENCES campaign_npcs(id) ON DELETE CASCADE,
+    is_public INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, CHECK(x BETWEEN 0 AND 100), CHECK(y BETWEEN 0 AND 100)
+  );
+  CREATE INDEX IF NOT EXISTS campaign_markers_campaign ON campaign_markers(campaign_id);
+  CREATE INDEX IF NOT EXISTS campaign_markers_npc ON campaign_markers(npc_id);
+  CREATE TABLE IF NOT EXISTS campaign_marker_secrets (marker_id TEXT PRIMARY KEY REFERENCES campaign_markers(id) ON DELETE CASCADE, secret TEXT NOT NULL DEFAULT '');
+`);
 // ADMIN_EMAIL can also designate an account that already exists.
 if (process.env.ADMIN_EMAIL) db.prepare("UPDATE users SET role='admin' WHERE email=?").run(process.env.ADMIN_EMAIL.trim().toLowerCase());
 
@@ -478,6 +513,88 @@ app.get('/api/campaigns/:code/hub',requireAuth,(req,res)=>{
   const row=campaignAccess(req.params.code,req.auth.userId);
   if(!row)return res.status(403).json({error:'Campanha indisponível. Entre como participante para abrir o Hub.'});
   res.json(campaignHubResponse(row,req.auth.userId));
+});
+const worldTables = {npc:'campaign_npcs',relation:'campaign_relations',marker:'campaign_markers',map:'campaign_maps'};
+const worldFields = {
+  npc:{name:'name',description:'description',isPublic:'is_public',linkedSheetId:'linked_sheet_id'},
+  relation:{fromNpcId:'from_npc_id',toNpcId:'to_npc_id',toSheetId:'to_sheet_id',label:'label',description:'description',isPublic:'is_public'},
+  marker:{name:'name',description:'description',x:'x',y:'y',npcId:'npc_id',isPublic:'is_public'},
+  map:{title:'title',imageData:'image_data'}
+};
+function worldRow(kind,row,owner) {
+  const data={};for(const [field,column] of Object.entries(worldFields[kind]))data[field]=field==='isPublic'?!!row[column]:row[column];
+  if(kind!=='map')data.id=row.id;data.version=row.version;
+  if(owner&&['npc','marker'].includes(kind))data.secret=db.prepare(`SELECT secret FROM campaign_${kind}_secrets WHERE ${kind}_id=?`).get(row.id)?.secret||'';
+  return data;
+}
+function campaignWorld(row,uid) {
+  const owner=row.owner_user_id===uid;
+  const readableSheet=id=>id&&canAccessSheet(db.prepare('SELECT * FROM character_sheets WHERE id=?').get(id),uid,row);
+  const npcs=db.prepare('SELECT * FROM campaign_npcs WHERE campaign_id=? ORDER BY name,id').all(row.id).filter(n=>owner||n.is_public).map(n=>worldRow('npc',n,owner));
+  const visible=new Set(npcs.map(n=>n.id));
+  for(const n of npcs)if(n.linkedSheetId&&!readableSheet(n.linkedSheetId))n.linkedSheetId=null;
+  const relations=db.prepare('SELECT * FROM campaign_relations WHERE campaign_id=? ORDER BY label,id').all(row.id)
+    .filter(r=>(owner||r.is_public)&&visible.has(r.from_npc_id)&&(r.to_npc_id?visible.has(r.to_npc_id):readableSheet(r.to_sheet_id)))
+    .map(r=>({...worldRow('relation',r,owner),...(r.to_sheet_id?{toSheetName:db.prepare('SELECT name FROM character_sheets WHERE id=?').get(r.to_sheet_id)?.name||'Personagem'}:{})}));
+  const markers=db.prepare('SELECT * FROM campaign_markers WHERE campaign_id=? ORDER BY name,id').all(row.id)
+    .filter(m=>(owner||m.is_public)&&(!m.npc_id||visible.has(m.npc_id))).map(m=>worldRow('marker',m,owner));
+  const map=db.prepare('SELECT * FROM campaign_maps WHERE campaign_id=?').get(row.id);
+  return {canManage:owner,npcs,relations,markers,map:map?worldRow('map',map,owner):{title:'Mapa da campanha',imageData:'',version:0}};
+}
+app.get('/api/campaigns/:code/world',requireAuth,(req,res)=>{
+  const row=campaignAccess(req.params.code,req.auth.userId);
+  if(!row)return res.status(403).json({error:'Entre na campanha para consultar seu mundo.'});
+  res.json(campaignWorld(row,req.auth.userId));
+});
+app.post('/api/campaigns/:code/world',requireAuth,(req,res)=>{
+  const campaign=requireCampaignMaster(req,res);if(!campaign)return;
+  const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
+  try {
+    const response=db.transaction(()=>{
+      const {kind,action,id=null,data={},expectedVersion=null}=req.body||{};
+      if(!Object.hasOwn(worldTables,kind)||!['save','delete'].includes(action)||kind==='map'&&action!=='save')fail('Ação do mundo inválida.');
+      if(!data||Array.isArray(data)||typeof data!=='object')fail('Informe os dados do registro.');
+      const table=worldTables[kind],key=kind==='map'?'campaign_id':'id';
+      if(id!==null&&(typeof id!=='string'||!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id)))fail('Identificador inválido.');
+      const target=kind==='map'?campaign.id:id;
+      if(kind==='map'&&id&&id!==campaign.id)fail('Mapa não encontrado.',404);
+      const row=target?db.prepare(`SELECT * FROM ${table} WHERE ${key}=? AND campaign_id=?`).get(target,campaign.id):null;
+      if(kind!=='map'&&id&&!row)fail('Registro não encontrado nesta campanha.',404);
+      if((row||kind==='map')&&(!Number.isInteger(expectedVersion)||expectedVersion!==(row?.version||0)))fail('Este registro mudou. Recarregue os dados antes de salvar.',409);
+      if(action==='delete') {
+        if(!row)fail('Registro não encontrado.',404);
+        db.prepare(`DELETE FROM ${table} WHERE id=? AND campaign_id=?`).run(id,campaign.id);return {id};
+      }
+      const fields=worldFields[kind],secretKind=['npc','marker'].includes(kind);
+      for(const field of Object.keys(data))if(!Object.hasOwn(fields,field)&&!(secretKind&&field==='secret'))fail('Campo não permitido: '+field);
+      const defaults={name:'',title:'Mapa da campanha',description:'',imageData:'',isPublic:false,linkedSheetId:null,fromNpcId:null,toNpcId:null,toSheetId:null,npcId:null,x:50,y:50,secret:''};
+      const next={...defaults,...(row?worldRow(kind,row,true):{}),...data};
+      const text=(field,max,min=0)=>{if(typeof next[field]!=='string'||next[field].trim().length<min||next[field].length>max)fail(`Confira o campo ${field} (até ${max} caracteres).`);next[field]=next[field].trim();};
+      if(kind==='map'){text('title',120,1);if(typeof next.imageData!=='string'||!validImageUpload(next.imageData))fail('Envie um mapa PNG, JPG ou WebP de até 3 MB.');}
+      else {
+        if(typeof next.isPublic!=='boolean')fail('Escolha a visibilidade do registro.');
+        text(kind==='relation'?'label':'name',kind==='relation'?120:100,1);text('description',kind==='npc'?4000:2000);
+        if(secretKind)text('secret',10000);
+      }
+      const npcRef=(field,required=false)=>{
+        const value=next[field];if(value===null&&!required)return;
+        if(typeof value!=='string'||!db.prepare('SELECT 1 FROM campaign_npcs WHERE id=? AND campaign_id=?').get(value,campaign.id))fail('Escolha um NPC desta campanha.');
+      };
+      const sheetRef=field=>{if(next[field]===null)return;if(typeof next[field]!=='string'||!canAccessSheet(db.prepare('SELECT * FROM character_sheets WHERE id=?').get(next[field]),req.auth.userId,campaign))fail('Escolha uma ficha disponível nesta campanha.');};
+      if(kind==='npc')sheetRef('linkedSheetId');
+      if(kind==='relation'){npcRef('fromNpcId',true);npcRef('toNpcId');sheetRef('toSheetId');if(Boolean(next.toNpcId)===Boolean(next.toSheetId)||next.fromNpcId===next.toNpcId)fail('Escolha um destino diferente: NPC ou personagem.');}
+      if(kind==='marker'){npcRef('npcId');for(const field of ['x','y'])if(typeof next[field]!=='number'||!Number.isFinite(next[field])||next[field]<0||next[field]>100)fail('As coordenadas devem estar entre 0 e 100.');}
+      if(!row&&kind!=='map'&&db.prepare(`SELECT count(*) AS total FROM ${table} WHERE campaign_id=?`).get(campaign.id).total>={npc:200,relation:500,marker:300}[kind])fail('Esta campanha atingiu o limite de registros desta categoria.',409);
+      const recordId=target||randomUUID(),version=(row?.version||0)+1;
+      const columns=Object.values(fields),values=Object.keys(fields).map(field=>field==='isPublic'?Number(next[field]):next[field]);
+      if(row)db.prepare(`UPDATE ${table} SET ${columns.map(c=>c+'=?').join(',')},version=? WHERE ${key}=?`).run(...values,version,recordId);
+      else {const insertColumns=[key,...(kind==='map'?[]:['campaign_id']),...columns,'version'];db.prepare(`INSERT INTO ${table}(${insertColumns.join(',')}) VALUES(${insertColumns.map(()=>'?').join(',')})`).run(recordId,...(kind==='map'?[]:[campaign.id]),...values,version);}
+      if(secretKind)db.prepare(`INSERT INTO campaign_${kind}_secrets(${kind}_id,secret) VALUES(?,?) ON CONFLICT(${kind}_id) DO UPDATE SET secret=excluded.secret`).run(recordId,next.secret);
+      return {id:recordId,version};
+    })();
+    io.to([campaign.code,`hub:${campaign.code}`]).emit('campaign:world-changed',{code:campaign.code});
+    res.json(response);
+  }catch(error){if(error.status)return res.status(error.status).json({error:error.message});throw error;}
 });
 app.put('/api/campaigns/:code/hub',requireAuth,(req,res)=>{
   const row=requireCampaignMaster(req,res);if(!row)return;
